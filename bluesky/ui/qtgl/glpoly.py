@@ -13,7 +13,7 @@ palette.set_default_colours(
 
 # Static defines
 POLYPREV_SIZE = 500 # Max number of vertices in preview off new edited polygon
-POLY_SIZE = 20000   # Max total number of vertices when summing all polygon vertices
+POLY_SIZE = 2000000   # Max total number of vertices when summing all polygon vertices
 
 
 class Poly(glh.RenderObject, layer=-20):
