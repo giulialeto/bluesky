@@ -3,7 +3,8 @@
 from random import randint
 import numpy as np
 # Import the global bluesky objects. Uncomment the ones you need
-from bluesky import core, stack, traf  #, settings, navdb, sim, scr, tools
+from bluesky import core, stack, traf, tools  #, settings, navdb, sim, scr, tools
+from bluesky.tools import areafilter
 
 ### Initialization function of your plugin. Do not change the name of this
 ### function, as it is the way BlueSky recognises this file as a plugin.
@@ -41,6 +42,13 @@ class Assignment(core.Entity):
         with self.settrafarrays():
             self.npassengers = np.array([])
 
+        stack.stack('Cre KL123, A320, EHAM, RWY18L')
+        stack.stack('ADDWPT KL123 HELEN')
+        stack.stack('SPD KL123 250')
+
+        stack.stack('POLY polytest 60,0,60,10,50,10,50,0,60,0')
+        stack.stack('COLOR polytest red')
+
     def create(self, n=1):
         ''' This function gets called automatically when new aircraft are created. '''
         # Don't forget to call the base class create when you reimplement this function!
@@ -55,6 +63,14 @@ class Assignment(core.Entity):
         ''' Periodic update function for our example entity. '''
         stack.stack('ECHO Example update: creating a random aircraft')
         stack.stack('MCRE 1')
+
+        # if areafilter.checkInside("polytest", 52, 5, 300):
+        #     print("AMS inside!")
+
+        ac_idx = traf.id2idx("KL123") #traf.id['KL123']
+        print(ac_idx)
+        # if areafilter.checkInside("polytest", traf.lat[ac_idx], traf.lon[ac_idx], traf.alt[ac_idx]):
+        #     traf.delete(ac_idx)
 
     # You can create new stack commands with the stack.command decorator.
     # By default, the stack command name is set to the function name.
