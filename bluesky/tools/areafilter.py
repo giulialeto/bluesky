@@ -236,5 +236,10 @@ class Poly(Shape):
 
     def checkInside(self, lat, lon, alt):
         points = np.vstack((lat,lon)).T
-        inside = np.all((self.border.contains_points(points), self.bottom <= alt, alt <= self.top), axis=0)
+        # if only one aircraft was checked, converts boolean to np.array before checking np.all
+        if type(self.bottom <= alt) == np.ndarray:
+            inside = np.all((self.border.contains_points(points), self.bottom <= alt, alt <= self.top), axis=0)
+        else:
+            inside = np.all((self.border.contains_points(points), np.array([self.bottom <= alt]), np.array([alt <= self.top])), axis=0)
         return inside
+
