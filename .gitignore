@@ -1,6 +1,5 @@
 # Automatically generated directories and files
 output
-plugins
 cache
 scenario/ic.scn
 bluesky/resources/grib
@@ -95,3 +94,4 @@ ssd.obj
 *-checkpoint.ipynb
 .ropeproject/config.py
 scenario/GL-scenarios/command_tester.scn
+/bluesky/plugins/fazlur
