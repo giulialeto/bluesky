@@ -2,6 +2,7 @@
 output
 plugins
 cache
+scenario
 scenario/ic.scn
 bluesky/resources/grib
 bluesky/resources/netcdf
