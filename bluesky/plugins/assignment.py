@@ -57,13 +57,13 @@ class Assignment(core.Entity):
         if create["polygon"]:
             coords = generate_random_polygon()
             coords_str = " ".join(coords.apply(lambda row: f"{row.lat},{row.lon}", axis=1))
-            stack.stack(f"POLY csr{self.polygon_id_count} {coords_str}")
-            stack.stack(f'COLOR csr{self.polygon_id_count} green')
+            stack.stack(f"POLY CSR_POLY_{self.polygon_id_count} {coords_str}")
+            stack.stack(f'COLOR CSR_POLY_{self.polygon_id_count} green')
             self.polygon_id_count += 1
         if create["box"]:
             coords = generate_random_rectangle()
-            stack.stack(f"BOX csr{self.box_id_count} {coords[0][0]},{coords[0][1]} {coords[1][0]},{coords[1][1]}")
-            stack.stack(f'COLOR csr{self.box_id_count} green')
+            stack.stack(f"BOX CSR_BOX_{self.box_id_count} {coords[0][0]},{coords[0][1]} {coords[1][0]},{coords[1][1]}")
+            stack.stack(f'COLOR CSR_BOX_{self.box_id_count} green')
             self.box_id_count += 1
 
 
