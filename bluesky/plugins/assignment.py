@@ -110,6 +110,10 @@ class Assignment(core.Entity):
     ''' Example new entity object for BlueSky. '''
     def __init__(self):
         super().__init__()
+        # Variables for ATCO
+        self.sectors = pd.DataFrame(columns=[f"sector_{i}" for i in range(1, max_amount_sectors + 1)] + ["from", "to"])
+
+        # Variables for CSR
         self.polygon_id_count = 0
         self.box_id_count = 0
 
@@ -124,7 +128,6 @@ class Assignment(core.Entity):
         for area in dict(filter(lambda s: "CSR" not in s[0], areafilter.basic_shapes.items())):
             if area not in sector_list: # This will interact with Jakob's areas!!!
                 stack.stack(f"DEL {area}")
-                blue(type(area))
             else:
                 stack.stack(f"COLOR {area} black")
 
@@ -154,6 +157,19 @@ class Assignment(core.Entity):
             selected_sectors.drop(columns='ac_count_sector_1', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_2', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_3', inplace=True)
+
+            if self.sectors.empty:
+                # add the first one
+                self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
+                self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
+            else:
+                last_setting = self.sectors.iloc[-1][self.sectors.filter(regex="sector", axis=1).columns].to_dict()
+                new_setting = selected_sectors.iloc[0].to_dict()
+                if new_setting != last_setting:
+                    self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
+                    self.sectors.iloc[-2, self.sectors.columns.get_loc('to')] = sim.simt
+                    self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
+            print(self.sectors)
 
             # using a stack command, create POLY and color them
             for index, row in selected_sectors.iterrows():
