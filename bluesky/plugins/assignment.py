@@ -188,7 +188,7 @@ class Assignment(core.Entity):
     def add_CSRs(self):
         # TODO get ERA5 data for 2022/12/01 and determine actual CSRs
         create = {
-            "polygon": False,
+            "polygon": True,
             "box": True
         }
         if create["polygon"]:

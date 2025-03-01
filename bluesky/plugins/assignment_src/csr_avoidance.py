@@ -17,8 +17,8 @@ def generate_random_polygon(num_vertices=5, lat_range=(28, 45), lon_range=(-40, 
     center_lat = np.random.randint(lat_range[0], lat_range[1])
     center_lon = np.random.randint(lon_range[0], lon_range[1])
 
-    size_lat = np.random.uniform(1, 4)
-    size_lon = np.random.uniform(1, 4)
+    size_lat = np.random.uniform(2, 4)
+    size_lon = np.random.uniform(2, 4)
 
     lat_coords = np.random.uniform(center_lat - size_lat / 2, center_lat + size_lat / 2, num_vertices).round(5)
     lon_coords = np.random.uniform(center_lon - size_lon / 2, center_lon + size_lon / 2, num_vertices).round(5)
@@ -29,6 +29,7 @@ def generate_random_polygon(num_vertices=5, lat_range=(28, 45), lon_range=(-40, 
     center = np.mean(points, axis=0)
     angles = np.arctan2(points[:, 1] - center[1], points[:, 0] - center[0])
     sorted_points = points[np.argsort(angles)]
+    sorted_points = np.vstack([sorted_points, sorted_points[0]])  # close the polygon
 
     return pd.DataFrame(sorted_points, columns=['lat', 'lon'])
 
@@ -126,17 +127,28 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
     end = (coords_first_outside[1], coords_first_outside[0])  # lon, lat
 
     # Define the obstacle in a format readable by the path finding algorithm
+    if "POLY" in shape_name:
+        coords = shape.coordinates
+        coords = [[coords[i + 1], coords[i]] for i in range(0, len(coords), 2)]
+        feature = { "type": "Feature", "properties": {}, "geometry": {
+            "type": "MultiLineString",
+            "coordinates": [coords],
+            "repulsion": [[0.001, 0], [0, 0.001]]  # slightly higher repulsion
+        }}
+    elif "BOX" in shape_name:
+        feature = { "type": "Feature", "properties": {}, "geometry": {
+            "type": "Rectangle",
+            "coordinates": [[shape.coordinates[1], shape.coordinates[0]],
+                            [shape.coordinates[3], shape.coordinates[2]]],
+            "repulsion": [[0.0001, 0], [0, 0.0001]]
+        }}
+
     to_avoid = {
         "type": "FeatureCollection",
         "name": "reroute",
         "crs": None,
         "features": [
-            {"type": "Feature", "properties": {}, "geometry": {
-                "type": "Rectangle",
-                "coordinates": [[shape.coordinates[1], shape.coordinates[0]],
-                                [shape.coordinates[3], shape.coordinates[2]]],
-                "repulsion": [[0.0001, 0], [0, 0.0001]]
-            }}
+            feature
         ]
     }
 
