@@ -6,9 +6,11 @@ import matplotlib.pyplot as plt
 from bluesky import stack
 from bluesky.tools import areafilter
 
-import bluesky.plugins.assignment_src.larp.larp.io as lpio
-import bluesky.plugins.assignment_src.larp.larp.quad as quad
-import bluesky.plugins.assignment_src.larp.larp.network as network
+# from larp-fork
+# pip install -e git+https://github.com/jsmretschnig/Larp.git#egg=Larp
+import larp.io as lpio
+import larp.quad as quad
+import larp.network as network
 
 # -------------------------------------------------------------------------------
 #   Generate random shapes
