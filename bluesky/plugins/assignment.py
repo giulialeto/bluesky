@@ -116,6 +116,8 @@ class Assignment(core.Entity):
         # Variables for CSR
         self.polygon_id_count = 0
         self.box_id_count = 0
+        self.create_CSRs_active = True
+        self.reroute_around_CSRs_active = True
 
     # -------------------------------------------------------------------------------
     #   Periodically timed functions for ATCO workload
@@ -182,10 +184,27 @@ class Assignment(core.Entity):
 
 
     # -------------------------------------------------------------------------------
+    #   Stack commands for CSR (climate sensitive region) avoidance
+    # -------------------------------------------------------------------------------
+    @stack.command(name="CREATE_CSR")
+    def create_CSRs(self, enable: "bool"):
+        print(f"CSR Creation: {enable}")
+        self.create_CSRs_active = enable
+
+
+    @stack.command(name="AVOID_CSR")
+    def avoid_CSRs(self, enable: "bool"):
+        print(f"CSR Avoidance: {enable}")
+        self.reroute_around_CSRs_active = enable
+
+
+    # -------------------------------------------------------------------------------
     #   Periodically timed functions for CSR (climate sensitive region) avoidance
     # -------------------------------------------------------------------------------
     @core.timed_function(name='create_random_CSRs', dt=7200)
     def add_CSRs(self):
+        if not self.create_CSRs_active:
+            return
         # TODO get ERA5 data for 2022/12/01 and determine actual CSRs
         create = {
             "polygon": True,
@@ -206,6 +225,8 @@ class Assignment(core.Entity):
 
     @core.timed_function(name='check_intersection', dt=60)
     def check_ac_intersect_csr(self):
+        if not self.reroute_around_CSRs_active:
+            return
         all_aircrafts = traf.id
         for ac_idx, ac_id in enumerate(all_aircrafts):
             ac_route = traf.ap.route[ac_idx]  # get aircraft trajectory
