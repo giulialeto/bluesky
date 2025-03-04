@@ -8,11 +8,11 @@ def get_current_location(traf):
     Collects active waypoints for all aircraft and updates them if the next waypoint 
     will be reached within the given time horizon.
 
-    Parameters:
-    traf (object): BlueSky traffic object containing all aircraft and their routes.
+    Args:
+        traf (object): BlueSky traffic object containing all aircraft and their routes.
 
     Returns:
-    list: A list of tuples (ac_id, wpname, wplat, wplon) with the active or updated waypoints.
+        list: A list of tuples (ac_id, wpname, wplat, wplon) with the active or updated waypoints.
     """
     current_laction = []
 
@@ -38,13 +38,13 @@ def get_future_location(traf, current_time, time_horizon):
     Collects active waypoints for all aircraft and updates them if the next waypoint 
     will be reached within the given time horizon.
 
-    Parameters:
-    traf (object): BlueSky traffic object containing all aircraft and their routes.
-    current_time (float): Current simulation time in seconds.
-    time_horizon (int, optional): Time window in seconds to check for waypoint updates.
+    Args:
+        traf (object): BlueSky traffic object containing all aircraft and their routes.
+        current_time (float): Current simulation time in seconds.
+        time_horizon (int, optional): Time window in seconds to check for waypoint updates.
 
     Returns:
-    list: A list of tuples (ac_id, wpname, wplat, wplon) with the active or updated waypoints.
+        list: A list of tuples (ac_id, wpname, wplat, wplon) with the active or updated waypoints.
     """
     future_waypoints = []
 
@@ -86,12 +86,12 @@ def get_sector_count(sector_list, current_location_df, future_waypoints_df):
     """
     Applies a mask for multiple areas and creates separate binary columns for each area.
 
-    Parameters:
-    df (pd.DataFrame): DataFrame with columns ['ac_id', 'wpname', 'wplat', 'wplon', 'wprta'].
-    sector_list (list): List of area names to check.
+    Args:
+        df (pd.DataFrame): DataFrame with columns ['ac_id', 'wpname', 'wplat', 'wplon', 'wprta'].
+        sector_list (list): List of area names to check.
 
     Returns:
-    pd.DataFrame: Updated DataFrame with additional columns for each area in sector_list.
+        pd.DataFrame: Updated DataFrame with additional columns for each area in sector_list.
     """
 
     sector_count_mask = pd.concat([future_waypoints_df, current_location_df], ignore_index=True)
