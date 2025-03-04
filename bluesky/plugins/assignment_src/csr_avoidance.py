@@ -126,6 +126,8 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
 
     # Define start and end coordinates for the path finding algorithm
     start = (ac_route.wplon[ac_route.iactwp], ac_route.wplat[ac_route.iactwp])  # lon, lat
+    if coords_first_outside is None:
+        return False
     end = (coords_first_outside[1], coords_first_outside[0])  # lon, lat
 
     # Define the obstacle in a format readable by the path finding algorithm

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from bluesky import sim
 from bluesky.tools import areafilter
 from itertools import combinations
 
@@ -115,6 +116,7 @@ def get_sector_count(sector_list, current_location_df, future_waypoints_df):
         # yellow(sector_count_mask_grouped)
         # Count the number of aircraft in each sector
         sector_count = sector_count_mask_grouped[sector_list].sum()
+        print(f"\n{sim.utc}")
         print(sector_count)
         # import code
         # code.interact(local=locals())

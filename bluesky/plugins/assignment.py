@@ -50,6 +50,10 @@ feasible_sector_combinations = [
 ]
 max_amount_sectors = 3  # Depends on the availability of ATCos
 max_aircraft_allowed = 2  # Soft constraint for the aircraft
+coloring = {
+    "sector": "white",
+    "CSR": "0,255,0"
+}
 
 #--------------------------------------------------------------------------------
 #  All sector combinations coordinated (LISBON FIR)
@@ -116,8 +120,8 @@ class Assignment(core.Entity):
         # Variables for CSR
         self.polygon_id_count = 0
         self.box_id_count = 0
-        self.create_CSRs_active = True
-        self.reroute_around_CSRs_active = True
+        self.create_CSRs_active = False
+        self.reroute_around_CSRs_active = False
         self.plot_potfield = False
 
     # -------------------------------------------------------------------------------
@@ -125,16 +129,7 @@ class Assignment(core.Entity):
     # -------------------------------------------------------------------------------
     @core.timed_function(name='sector_opening', dt=workload_evaluation_dt)
     def sector_count(self):
-        red('WORKLOAD EVALUATION')
-        # Re-set active sectors:
-        # Delete all areas which are not in the basic sector list, color basic sectors black
-        for area in dict(filter(lambda s: "CSR" not in s[0], areafilter.basic_shapes.items())):
-            if area not in sector_list: # This will interact with Jakob's areas!!!
-                stack.stack(f"DEL {area}")
-            else:
-                stack.stack(f"COLOR {area} black")
-
-
+        # red('WORKLOAD EVALUATION')
 
         # Get current location of all aircraft
         current_location_df = get_current_location(traf)
@@ -155,33 +150,50 @@ class Assignment(core.Entity):
             sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns = sector_count_in_feasible_combinations(feasible_sector_combinations_with_ATCO_available, sector_count)
             # Select the best grouping of sectors
             selected_sectors = select_best_grouping(sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns, max_aircraft_allowed)
-            yellow(f'sector_count_feasible_sector_combinations_with_ATCO_available {sector_count_feasible_sector_combinations_with_ATCO_available}')
+            # yellow(f'sector_count_feasible_sector_combinations_with_ATCO_available {sector_count_feasible_sector_combinations_with_ATCO_available}')
             green(f'select_best_grouping {selected_sectors}')
             selected_sectors.drop(columns='ac_count_sector_1', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_2', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_3', inplace=True)
 
+            def _plot_sectors():
+                # using a stack command, create POLY and color them
+                for index, row in selected_sectors.iterrows():
+                    for sector in row.dropna():  # Drop NaN values to only process valid sector names
+                        stack_name = f"{sector}_stack"
+                        if stack_name in globals():  # Check if the variable exists
+                            stack.stack(globals()[
+                                            stack_name])  # Pass the actual variable content to stack.stack()
+                        # color the active sectors
+                        stack.stack(f"COLOR {sector} {coloring['sector']}")
+
             if self.sectors.empty:
                 # add the first one
+                _plot_sectors()
                 self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                 self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
             else:
                 last_setting = self.sectors.iloc[-1][self.sectors.filter(regex="sector", axis=1).columns].to_dict()
                 new_setting = selected_sectors.iloc[0].to_dict()
                 if new_setting != last_setting:
+                    # Re-set active sectors:
+                    # Delete all sectors which are not in the basic sector list or CSRs, color the basic sectors black
+                    for area in dict(filter(lambda s: "CSR" not in s[0], areafilter.basic_shapes.items())):
+                        if area not in sector_list:
+                            stack.stack(f"DEL {area}")
+                        else:
+                            stack.stack(f"COLOR {area} black")
+                    _plot_sectors()
+
                     self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                     self.sectors.iloc[-2, self.sectors.columns.get_loc('to')] = sim.simt
                     self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
             print(self.sectors)
-
-            # using a stack command, create POLY and color them
-            for index, row in selected_sectors.iterrows():
-                for sector in row.dropna():  # Drop NaN values to only process valid sector names
-                    stack_name = f"{sector}_stack" 
-                    if stack_name in globals():  # Check if the variable exists
-                        stack.stack(globals()[stack_name])  # Pass the actual variable content to stack.stack()  
-                    # color the active sectors
-                    stack.stack(f"COLOR {sector} blue")
+        else:
+            # empty traffic object, go for single big sector
+            if "DNCSVM" not in areafilter.basic_shapes.keys():
+                stack.stack(globals()["DNCSVM_stack"])
+                stack.stack(f"COLOR DNCSVM {coloring['sector']}")
 
 
     # -------------------------------------------------------------------------------
@@ -200,7 +212,7 @@ class Assignment(core.Entity):
 
 
     @stack.command(name="PLOT_POTFIELD")
-    def avoid_CSRs(self, enable: "bool"):
+    def plot_potfields(self, enable: "bool"):
         print(f"Plot potential fields: {enable}")
         self.plot_potfield = enable
 
@@ -221,12 +233,12 @@ class Assignment(core.Entity):
             coords = generate_random_polygon()
             coords_str = " ".join(coords.apply(lambda row: f"{row.lat},{row.lon}", axis=1))
             stack.stack(f"POLY CSR_POLY_{self.polygon_id_count} {coords_str}")
-            stack.stack(f'COLOR CSR_POLY_{self.polygon_id_count} green')
+            stack.stack(f'COLOR CSR_POLY_{self.polygon_id_count} {coloring["CSR"]}')
             self.polygon_id_count += 1
         if create["box"]:
             coords = generate_random_rectangle()
             stack.stack(f"BOX CSR_BOX_{self.box_id_count} {coords[0][0]},{coords[0][1]} {coords[1][0]},{coords[1][1]}")
-            stack.stack(f'COLOR CSR_BOX_{self.box_id_count} green')
+            stack.stack(f'COLOR CSR_BOX_{self.box_id_count} {coloring["CSR"]}')
             self.box_id_count += 1
 
 
