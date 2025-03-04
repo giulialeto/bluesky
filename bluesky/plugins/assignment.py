@@ -135,11 +135,11 @@ class Assignment(core.Entity):
         current_location_df = get_current_location(traf)
         # Get the next waypoint of all aircraft
         future_waypoints_df = get_future_location(traf, sim.simt, workload_evaluation_dt)
+        
+        
         # Get the sector count based on current location and future location of the aircraft
-        # TODO: swap this function with some other metric, resulting in a df numbers assigned 
-        # to each sector, with higher number representing higher complexity. For example, 
-        # dynamic density metric
         sector_count = get_sector_count(sector_list, current_location_df, future_waypoints_df)
+        # TODO: swap this function with some other metric, resulting in a df numbers assigned to each sector, with higher number representing higher complexity. For example, dynamic density metric
 
         # sector_count is a dict as long as no aircraft have been spawned
         if not isinstance(sector_count, dict):
@@ -156,8 +156,8 @@ class Assignment(core.Entity):
             selected_sectors.drop(columns='ac_count_sector_2', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_3', inplace=True)
 
+            # using a stack command, create POLY and color them
             def _plot_sectors():
-                # using a stack command, create POLY and color them
                 for index, row in selected_sectors.iterrows():
                     for sector in row.dropna():  # Drop NaN values to only process valid sector names
                         stack_name = f"{sector}_stack"
@@ -167,12 +167,15 @@ class Assignment(core.Entity):
                         # color the active sectors
                         stack.stack(f"COLOR {sector} {coloring['sector']}")
 
+
             if self.sectors.empty:
-                # add the first one
+                # add the FIR
                 _plot_sectors()
+                # store sector history in a pd.DataFrame
                 self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                 self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
             else:
+                # check if the last sector setting is the same as the current one
                 last_setting = self.sectors.iloc[-1][self.sectors.filter(regex="sector", axis=1).columns].to_dict()
                 new_setting = selected_sectors.iloc[0].to_dict()
                 if new_setting != last_setting:
@@ -183,18 +186,19 @@ class Assignment(core.Entity):
                             stack.stack(f"DEL {area}")
                         else:
                             stack.stack(f"COLOR {area} black")
+                    # plot the new sectors
                     _plot_sectors()
 
+                    # store sector history in a pd.DataFrame
                     self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                     self.sectors.iloc[-2, self.sectors.columns.get_loc('to')] = sim.simt
                     self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
             print(self.sectors)
         else:
-            # empty traffic object, go for single big sector
+            # empty traffic object, go for FIR
             if "DNCSVM" not in areafilter.basic_shapes.keys():
                 stack.stack(globals()["DNCSVM_stack"])
                 stack.stack(f"COLOR DNCSVM {coloring['sector']}")
-
 
     # -------------------------------------------------------------------------------
     #   Stack commands for CSR (climate sensitive region) avoidance
