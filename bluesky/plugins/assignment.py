@@ -118,6 +118,7 @@ class Assignment(core.Entity):
         self.box_id_count = 0
         self.create_CSRs_active = True
         self.reroute_around_CSRs_active = True
+        self.plot_potfield = False
 
     # -------------------------------------------------------------------------------
     #   Periodically timed functions for ATCO workload
@@ -198,6 +199,12 @@ class Assignment(core.Entity):
         self.reroute_around_CSRs_active = enable
 
 
+    @stack.command(name="PLOT_POTFIELD")
+    def avoid_CSRs(self, enable: "bool"):
+        print(f"Plot potential fields: {enable}")
+        self.plot_potfield = enable
+
+
     # -------------------------------------------------------------------------------
     #   Periodically timed functions for CSR (climate sensitive region) avoidance
     # -------------------------------------------------------------------------------
@@ -245,5 +252,5 @@ class Assignment(core.Entity):
             for shape_name, shape in dict(filter(lambda s: "CSR" in s[0], areafilter.basic_shapes.items())).items():
                 if areafilter.checkInside(shape_name, ac_coords["lat"], ac_coords["lon"], 0):
                     print(f"Aircraft {ac_id} will intersect with {shape_name} soon! Trying to reroute...")
-                    success = reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False)
+                    success = reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=self.plot_potfield)
                     print(f"Rerouting {'successful' if success else 'failed'} for aircraft {ac_id}.")
