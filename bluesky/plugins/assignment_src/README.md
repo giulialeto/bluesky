@@ -113,4 +113,4 @@ This project exists thanks to all the people who contribute to [BlueSky](https:/
 
 [GNU](LICENSE) © TU Delft.
 - Eurocontrol data from [https://www.eurocontrol.int/dashboard/rnd-data-archive](Aviation data for research)
-- Sector information from ...
+- Sector information from [https://ais.nav.pt/online-eaip-en/]
