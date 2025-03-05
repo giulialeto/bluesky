@@ -15,7 +15,7 @@ import larp.network as network
 # -------------------------------------------------------------------------------
 #   Generate random shapes
 # -------------------------------------------------------------------------------
-def generate_random_polygon(num_vertices=5, lat_range=(28, 45), lon_range=(-40, -6)):
+def generate_random_polygon(num_vertices=5, lat_range=(35, 42), lon_range=(-15, -6)):
     center_lat = np.random.randint(lat_range[0], lat_range[1])
     center_lon = np.random.randint(lon_range[0], lon_range[1])
 
@@ -36,7 +36,7 @@ def generate_random_polygon(num_vertices=5, lat_range=(28, 45), lon_range=(-40, 
     return pd.DataFrame(sorted_points, columns=['lat', 'lon'])
 
 
-def generate_random_rectangle(lat_range=(28, 45), lon_range=(-40, -6)):
+def generate_random_rectangle(lat_range=(35, 42), lon_range=(-15, -6)):
     uppper_left_lat = np.random.uniform(lat_range[0], lat_range[1])
     uppper_left_lon = np.random.uniform(lon_range[0], lon_range[1])
 
@@ -52,12 +52,13 @@ def generate_random_rectangle(lat_range=(28, 45), lon_range=(-40, -6)):
 # -------------------------------------------------------------------------------
 #   Path finding using Potential Fields
 # -------------------------------------------------------------------------------
-def _potential_field(start, end, fc, plot=False):
+def _potential_field(ac_id, start, end, fc, plot=False):
     """ Path finding algorithm to determine the new waypoints around the obstacles using potential fields.
         Based on https://github.com/wzjoriv/Larp/blob/main/presentation.ipynb.
         Citation: Rivera, Josue N., and Dengfeng Sun. "Multi-Scale Cell Decomposition for Path Planning using
         Restrictive Routing Potential Fields." arXiv preprint arXiv:2408.02786 (2024).
         Args:
+            ac_id: Aircraft ID
             start (tuple): (longitude, latitude)
             end (tuple): (longitude, latitude)
             fc (dict): JSON FeatureCollection with the obstacles to avoid.
@@ -80,11 +81,20 @@ def _potential_field(start, end, fc, plot=False):
     routing_network = network.RoutingNetwork(quadtree=quadtree, build_network=True)
 
     k = 1.2
-    route = routing_network.find_route(start, end, scale_tranform=lambda x: 1 / (k * (1.0 - x + 1e-10)), alg="A*")
-    # route = routing_network.find_route(start, end, scale_tranform=lambda x: x + 1, alg="A*")
+    route = routing_network.find_route(start, end, scale_tranform=lambda x: 1 / (k * (1.0 - x + 1e-10)), alg="A*", penalty=10.0)
     print(f"Route found: {route is not None}")
 
     if route is None:
+        # always plot
+        plt.figure(dpi=150)
+        display = field.to_image(resolution=400)
+        plt.imshow(display, cmap='jet', extent=field.get_extent(), alpha=0.8)
+        plt.colorbar().set_ticks([0.0] + edges + [1.0])
+        plt.plot(start[0], start[1], 'w^')  # start
+        plt.plot(end[0], end[1], 'wv')  # end
+        plt.title(f"Aircraft {ac_id} | no route found")
+        plt.show()
+
         return None
 
     route_path = network.RoutingNetwork.route_to_lines_collection(start, end, route, remapped=True)
@@ -98,9 +108,9 @@ def _potential_field(start, end, fc, plot=False):
         plt.colorbar().set_ticks([0.0] + edges + [1.0])
         plt.plot(*routes_lines, color="#fff", alpha=1.0, linewidth=0.5)
         plt.plot(route_path[:, 0], route_path[:, 1], color="#0f0", alpha=1.0, linewidth=1.0)
-        plt.plot(route_path[0, 0], route_path[0, 1], 'r4', markersize=10.0, markeredgewidth=1.5)
-        plt.plot(route_path[-1, 0], route_path[-1, 1], 'wx')
-        plt.plot(end[0], end[1], 'bx')
+        plt.plot(route_path[0, 0], route_path[0, 1], 'w^', markersize=10.0, markeredgewidth=1.5)  # start
+        plt.plot(route_path[-1, 0], route_path[-1, 1], 'wv')  # end
+        plt.title(f"Aircraft {ac_id}")
         plt.show()
 
     return route_path
@@ -130,6 +140,8 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
         return False
     end = (coords_first_outside[1], coords_first_outside[0])  # lon, lat
 
+    repulsion = 0.01
+
     # Define the obstacle in a format readable by the path finding algorithm
     if "POLY" in shape_name:
         coords = shape.coordinates
@@ -137,14 +149,14 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
         feature = { "type": "Feature", "properties": {}, "geometry": {
             "type": "MultiLineString",
             "coordinates": [coords],
-            "repulsion": [[0.001, 0], [0, 0.001]]  # slightly higher repulsion
+            "repulsion": [[repulsion, 0], [0, repulsion]]
         }}
     elif "BOX" in shape_name:
         feature = { "type": "Feature", "properties": {}, "geometry": {
             "type": "Rectangle",
             "coordinates": [[shape.coordinates[1], shape.coordinates[0]],
                             [shape.coordinates[3], shape.coordinates[2]]],
-            "repulsion": [[0.0001, 0], [0, 0.0001]]
+            "repulsion": [[repulsion, 0], [0, repulsion]]
         }}
 
     to_avoid = {
@@ -158,10 +170,12 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
 
     # Try to find a path around the obstacle.
     # If no path is found, try setting the 2nd, 3rd, ... waypoint after the CSR as end coordinate
-    while (path := _potential_field(start, end, to_avoid, plot)) is None:
+    try_count = 0
+    while (path := _potential_field(ac_id, start, end, to_avoid, plot)) is None:
         print("Try again to find a route around the obstacle.")
         idx_first_outside += 1
-        if idx_first_outside == len(upcoming_traj_coords):
+        try_count += 1
+        if idx_first_outside == len(upcoming_traj_coords) or try_count == 5:
             print("Couldn't find any route around the obstacle.")
             return False
         coords_first_outside = upcoming_traj_coords[idx_first_outside]
@@ -176,9 +190,10 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
     # Add the new waypoints to the trajectory
     wpt_before = ac_route.wpname[ac_route.iactwp]  # the starting wpt
     for index, wpt in enumerate(path):
-        stack.stack(f"DEFWPT POTFIELD_{ac_id}_{index} {wpt[1]},{wpt[0]} FIX")
-        stack.stack(f"ADDWPT {ac_id} POTFIELD_{ac_id}_{index} 0 0 {wpt_before}")
-        wpt_before = f"POTFIELD_{ac_id}_{index}"
+        pf_name = f"PF_{ac_id}_{shape_name}_{index}"
+        stack.stack(f"DEFWPT {pf_name} {wpt[1]},{wpt[0]} FIX")
+        stack.stack(f"ADDWPT {ac_id} {pf_name} 0 0 {wpt_before}")
+        wpt_before = pf_name
 
     # Delete the old waypoints from the route
     for wp in wpts_to_delete:

@@ -29,6 +29,11 @@ To use this plugin, it is also required to install Larp:
 $ pip install -e git+https://github.com/jsmretschnig/Larp.git#egg=Larp
 ```
 
+and pyproj:
+```sh
+$ pip install pyproj
+```
+
 Further dependencies are `numpy`, `pandas`, and `matplotlib`.
 
 ## Usage

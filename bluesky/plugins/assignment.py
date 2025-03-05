@@ -120,9 +120,31 @@ class Assignment(core.Entity):
         # Variables for CSR
         self.polygon_id_count = 0
         self.box_id_count = 0
-        self.create_CSRs_active = False
-        self.reroute_around_CSRs_active = False
-        self.plot_potfield = False
+        self.create_random_CSRs = False
+        self.reroute_around_CSRs = True
+        self.plot_potential_fields = False
+
+        # Init hardcoded obstacles for DEMO
+        # POLYGONS
+        # stack.stack("POLY CSR_POLY_HC1 42.373533,-9.207331 41.574781,-9.787984 41.167417,-8.267728 41.295217,-5.828984 42.261707,-5.955672 42.525296,-7.792648")
+        # stack.stack(f'COLOR CSR_POLY_HC1 {coloring["CSR"]}')
+        #
+        # stack.stack("POLY CSR_POLY_HC2 39.998794,-9.69147 39.109431,-9.940113 39.219455,-8.081215 39.485347,-6.115756 40.062975,-6.103916 39.952951,-7.939134 40.145493,-9.229706")
+        # stack.stack(f'COLOR CSR_POLY_HC2 {coloring["CSR"]}')
+        #
+        # stack.stack("POLY CSR_POLY_HC3 46.069824,-3.833122 44.847438,-5.102157 43.943935,-3.350888 44.067946,-0.53363 45.467489,0.253172 46.441854,-1.625")
+        # stack.stack(f'COLOR CSR_POLY_HC3 {coloring["CSR"]}')
+
+        # BOXES
+        stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
+        stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
+
+        stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
+        stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
+
+        stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
+        stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
+
 
     # -------------------------------------------------------------------------------
     #   Periodically timed functions for ATCO workload
@@ -202,19 +224,19 @@ class Assignment(core.Entity):
     @stack.command(name="CREATE_CSR")
     def create_CSRs(self, enable: "bool"):
         print(f"CSR Creation: {enable}")
-        self.create_CSRs_active = enable
+        self.create_random_CSRs = enable
 
 
     @stack.command(name="AVOID_CSR")
     def avoid_CSRs(self, enable: "bool"):
         print(f"CSR Avoidance: {enable}")
-        self.reroute_around_CSRs_active = enable
+        self.reroute_around_CSRs = enable
 
 
     @stack.command(name="PLOT_POTFIELD")
     def plot_potfields(self, enable: "bool"):
         print(f"Plot potential fields: {enable}")
-        self.plot_potfield = enable
+        self.plot_potential_fields = enable
 
 
     # -------------------------------------------------------------------------------
@@ -222,15 +244,15 @@ class Assignment(core.Entity):
     # -------------------------------------------------------------------------------
     @core.timed_function(name='create_random_CSRs', dt=7200)
     def add_CSRs(self):
-        if not self.create_CSRs_active:
+        if not self.create_random_CSRs:
             return
         # TODO get ERA5 data for 2022/12/01 and determine actual CSRs
         create = {
-            "polygon": True,
+            "polygon": False,
             "box": True
         }
         if create["polygon"]:
-            coords = generate_random_polygon()
+            coords = generate_random_polygon(lon_range=(-12, -6))
             coords_str = " ".join(coords.apply(lambda row: f"{row.lat},{row.lon}", axis=1))
             stack.stack(f"POLY CSR_POLY_{self.polygon_id_count} {coords_str}")
             stack.stack(f'COLOR CSR_POLY_{self.polygon_id_count} {coloring["CSR"]}')
@@ -244,7 +266,7 @@ class Assignment(core.Entity):
 
     @core.timed_function(name='check_intersection', dt=60)
     def check_ac_intersect_csr(self):
-        if not self.reroute_around_CSRs_active:
+        if not self.reroute_around_CSRs:
             return
         all_aircrafts = traf.id
         for ac_idx, ac_id in enumerate(all_aircrafts):
@@ -264,5 +286,5 @@ class Assignment(core.Entity):
             for shape_name, shape in dict(filter(lambda s: "CSR" in s[0], areafilter.basic_shapes.items())).items():
                 if areafilter.checkInside(shape_name, ac_coords["lat"], ac_coords["lon"], 0):
                     print(f"Aircraft {ac_id} will intersect with {shape_name} soon! Trying to reroute...")
-                    success = reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=self.plot_potfield)
+                    success = reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=self.plot_potential_fields)
                     print(f"Rerouting {'successful' if success else 'failed'} for aircraft {ac_id}.")
