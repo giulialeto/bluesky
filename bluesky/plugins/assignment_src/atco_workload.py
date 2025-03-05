@@ -6,19 +6,15 @@ from itertools import combinations
 
 def get_current_location(traf):
     """
-    Collects active waypoints for all aircraft and updates them if the next waypoint 
-    will be reached within the given time horizon.
+    Gets the current location of all aircraft
 
     Args:
         traf (object): BlueSky traffic object containing all aircraft and their routes.
 
     Returns:
-        list: A list of tuples (ac_id, wpname, wplat, wplon) with the active or updated waypoints.
+        current_location_df (pd.DataFrame): contains columns ['ac_id', 'wpname', 'lat', 'lon', 'alt'] with the current location of all aircraft.
     """
     current_laction = []
-
-    # import code
-    # code.interact(local=locals())
 
     for ac_id in traf.id:  # Iterate through all aircraft
         ac_idx = traf.id2idx(ac_id)
@@ -36,31 +32,24 @@ def get_current_location(traf):
 
 def get_future_location(traf, current_time, time_horizon):
     """
-    Collects active waypoints for all aircraft and updates them if the next waypoint 
-    will be reached within the given time horizon.
-
+    Saves the active waypoint of the aircraft when they fall within the given time horizon.
+    
     Args:
         traf (object): BlueSky traffic object containing all aircraft and their routes.
         current_time (float): Current simulation time in seconds.
-        time_horizon (int, optional): Time window in seconds to check for waypoint updates.
+        time_horizon (int): Time window in seconds to check for waypoint updates.
 
     Returns:
-        list: A list of tuples (ac_id, wpname, wplat, wplon) with the active or updated waypoints.
+        future_waypoints_df (pd.DataFrame): contains columns ['ac_id', 'wpname', 'lat', 'lon', 'alt'] with the future location of all aircraft, if the active waypoint will be reached within the time horizon.
     """
     future_waypoints = []
 
-    # import code
-    # code.interact(local=locals())
-
     for ac_id in traf.id:  # Iterate through all aircraft
-        ac_idx = traf.id2idx(ac_id)
 
+        ac_idx = traf.id2idx(ac_id)
         route = traf.ap.route[ac_idx]  # Get the route of the aircraft
         iactwp = route.iactwp  # Get index of the currently active waypoint
         
-        # if iactwp is None or iactwp < 0 or iactwp >= len(route.wpname) - 1:
-        #     continue  # Skip if no active waypoint or it's the last one
-
         # Check the next waypoint (active waypoint)
         next_wprta = route.wprta[iactwp]
         # yellow(f"current_time {current_time}")
@@ -85,14 +74,15 @@ def get_future_location(traf, current_time, time_horizon):
 
 def get_sector_count(sector_list, current_location_df, future_waypoints_df):
     """
-    Applies a mask for multiple areas and creates separate binary columns for each area.
-
+    Count the number of aircraft in each sector.
+    
     Args:
-        df (pd.DataFrame): DataFrame with columns ['ac_id', 'wpname', 'wplat', 'wplon', 'wprta'].
         sector_list (list): List of area names to check.
+        current_location_df (pd.DataFrame): DataFrame with columns ['ac_id', 'wpname', 'lat', 'lon', 'alt'] with the current location of all aircraft.
+        future_waypoints_df (pd.DataFrame): DataFrame with columns ['ac_id', 'wpname', 'lat', 'lon', 'alt'] with the future location of all aircraft, if the active waypoint will be reached within the time horizon.
 
     Returns:
-        pd.DataFrame: Updated DataFrame with additional columns for each area in sector_list.
+        sector_count (pd.Series): Contains with the number of aircraft in each sector.
     """
 
     sector_count_mask = pd.concat([future_waypoints_df, current_location_df], ignore_index=True)
@@ -118,13 +108,19 @@ def get_sector_count(sector_list, current_location_df, future_waypoints_df):
         sector_count = sector_count_mask_grouped[sector_list].sum()
         print(f"\n{sim.utc}")
         print(sector_count)
-        # import code
-        # code.interact(local=locals())
     return sector_count
 
-
-# Function to check if a selection of sectors covers all areas exactly once
 def get_feasible_sector_combinations_with_ATCO_available(feasible_sector_combinations, max_amount_sectors):
+    """
+    Generate all feasible combinations of sectors with a given maximum amount of sectors open at the same time (which is the number of air traffic controllers available at the same time).
+    
+    Args:
+        feasible_sector_combinations (list): List of feasible sector combinations.
+        max_amount_sectors (int): Maximum number of sectors open at the same time, which is the number of air traffic controllers available at the same time.
+    
+    Returns:
+        filtered_combinations (pd.DataFrame): Contains all feasible combinations of sectors with a given maximum amount of sectors.
+    """
     # Generate all combinations with 1 to max_amount_sectors elements
     all_combinations = []
     header = []
@@ -141,23 +137,35 @@ def get_feasible_sector_combinations_with_ATCO_available(feasible_sector_combina
     # First filter: Keep only rows where all characters in 'concatenate' are unique
     filtered_combinations = combinations_df[combinations_df['concatenate'].apply(lambda x: len(set(x)) == len(x))]
     
-    # Filter rows where 'concatenate' contains exactly 6 characters and re-index the DataFrame
+    # Second filter: Keep only rows where 'concatenate' contains exactly 6 characters and re-index the DataFrame
     filtered_combinations = filtered_combinations[filtered_combinations['concatenate'].apply(lambda x: len(x) == 6)].reset_index(drop=True)
+    
+    # Drop the 'concatenate' column
     filtered_combinations = filtered_combinations.drop(columns='concatenate')
 
     return filtered_combinations
 
-
-
-# Function to compute the sum of sector counts for each element in a row
+# Function to compute the sum of sector counts for each element in a row, which is defined as the sum of the sector counts of the characters in the name of the combinated sectors
 def compute_ac_count(row, sector_count):
     return [sum(sector_count.get(letter, 0) for letter in str(element) if element is not None) for element in row]
 
 def sector_count_in_feasible_combinations(filtered_combinations, sector_count):
+    """
+    Count the number of aircraft in each feasible sector combination.
+
+    Args:
+        filtered_combinations (pd.DataFrame): Contains all feasible combinations of sectors with a given maximum amount of sectors.
+        sector_count (pd.Series): Contains with the number of aircraft in each sector.
+
+    Returns:
+        filtered_combinations (pd.DataFrame): Contains all feasible combinations of sectors with a given maximum amount of sectors, with the number of aircraft in each sector combination.
+        ac_count_columns (list): List of column names containing the number of aircraft in each sector combination
+    """
+
     # Generate column names
     ac_count_columns = [f"ac_count_sector_{i+1}" for i in range(filtered_combinations.shape[1])]
 
-    # Apply the function row-wise and create new columns
+    # Apply the function row-wise and create new columns for each sector combination containing the combined sector count
     ac_counts = filtered_combinations.apply(lambda row: compute_ac_count(row, sector_count), axis=1, result_type='expand')
 
     # Assign correct column names to the new DataFrame
@@ -169,39 +177,60 @@ def sector_count_in_feasible_combinations(filtered_combinations, sector_count):
     return filtered_combinations, ac_count_columns
 
 def select_best_grouping(filtered_combinations, ac_count_columns, max_aircraft_allowed):
-    # Calculate the maximum value across the ac_count_sector_ columns for each row
-    # import code
-    # code.interact(local=locals())
+    """
+    Select the best grouping of sectors based on the number of aircraft in each sector combination.
 
+    Args:
+        filtered_combinations (pd.DataFrame): Contains all feasible combinations of sectors with a given maximum amount of sectors.
+        ac_count_columns (list): List of column names containing the number of aircraft in each sector combination.
+        max_aircraft_allowed (int): Soft constraint suggesting the preferable maximum number of aircraft allowed in one sector.
+
+    Returns:
+        selected_sectors (pd.DataFrame): Contains the selected sector combination to be scheduled.
+    """
+    # Calculate the maximum value across the ac_count_columns for each row
     filtered_combinations['max_ac_count'] = filtered_combinations[ac_count_columns].max(axis=1)
     # red(f"filtered_combinations {filtered_combinations}")
-    # Find the lowest maximum value
+
+    # Find the maximum value of the aircraft count in the DataFrame
     max_max_ac_count = filtered_combinations['max_ac_count'].max()
+
+    # If the maximum value of the aircraft count is less than or equal to the maximum number of aircraft allowed,
+    # we will prioritize minimizing the amount of sectors open
     if max_max_ac_count <= max_aircraft_allowed:
+        # Filter the DataFrame to keep only rows where the maximum aircraft count is the highest found
         selected_sectors = filtered_combinations[filtered_combinations['max_ac_count'] == max_max_ac_count].drop(columns=['max_ac_count'])
 
         # Count the number of None values in each row
         none_counts = selected_sectors.isna().sum(axis=1)
 
-        # If there are None values, select the row(s) with the most None values
+        # If there are None values, select the row(s) with the most None values, which is the combination with the least amount of sectors open
         if none_counts.max() > 0:
             selected_sectors = selected_sectors[none_counts == none_counts.max()]
+            # If there are multiple rows with the most None values, select any of them
             selected_sectors = selected_sectors.iloc[:1]
         else:
             # If there are no None values, select any of the available rows
-            # selected_sectors = selected_sectors.sample(n=1, random_state=42)
             selected_sectors = selected_sectors.iloc[:1]
         return selected_sectors
     
+    # If the maximum value of the aircraft count is greater than the maximum number of aircraft allowed,
+    # we will prioritize sectors in which the maximum aircraft count is at its lowest, and where the aircraft count in the other sectors is balanced
+    
+    # Find the minimum value of the maximum aircraft count in the DataFrame
     min_max_ac_count = filtered_combinations['max_ac_count'].min()
 
     # Filter the DataFrame to keep only rows where the maximum aircraft count is the lowest found
     selected_sectors = filtered_combinations[filtered_combinations['max_ac_count'] == min_max_ac_count].drop(columns=['max_ac_count'])
     
+    # find the minium number of aircraft in the sectors 
     selected_sectors['min_ac_count'] = selected_sectors[ac_count_columns].min(axis=1)
+
+    # Select the combinations of sectors in which the minimum number of aircraft per sector is the highest
     max_min_ac_count = selected_sectors['min_ac_count'].max()
     selected_sectors = selected_sectors[selected_sectors['min_ac_count'] == max_min_ac_count].drop(columns=['min_ac_count'])
 
+    # Select any sectors that meet the criteria
     selected_sectors = selected_sectors.iloc[:1]
 
     # if min_max_ac_count > max_aircraft_allowed:
