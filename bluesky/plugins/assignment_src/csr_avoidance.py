@@ -189,11 +189,8 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
 
     # Add the new waypoints to the trajectory
     wpt_before = ac_route.wpname[ac_route.iactwp]  # the starting wpt
-    for index, wpt in enumerate(path):
-        pf_name = f"PF_{ac_id}_{shape_name}_{index}"
-        stack.stack(f"DEFWPT {pf_name} {wpt[1]},{wpt[0]} FIX")
-        stack.stack(f"ADDWPT {ac_id} {pf_name} 0 0 {wpt_before}")
-        wpt_before = pf_name
+    for index, wpt in enumerate(path[::-1]):
+        stack.stack(f"ADDWPT {ac_id} {wpt[1]},{wpt[0]} 0 0 {wpt_before}")
 
     # Delete the old waypoints from the route
     for wp in wpts_to_delete:
