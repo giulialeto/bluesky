@@ -42,6 +42,16 @@ Run BlueSky using `python BlueSky.py` and activate the plugin with `PLUGIN ASSIG
 
 To load the historic air traffic data, request the scenario file from the authors and load it using `PCALL scenario_filename.SCN`.
 
+### Flight sector functionality
+...
+
+### CSR functionality
+- There are 3 boolean stack functions available: `CREATE_CSR` to generate random CSRs within the Portuguese airspace, `AVOID_CSR` to enable or disable the rerouting around CSR regions, and `PLOT_POTFIELD` to visualize the potential field and the graph network with the chosen route.
+- How the algorithm works: The aircraft is navigating towards a certain waypoint (=origin). Whenever the 2nd upcoming waypoint (i.e. the waypoint after the one the aircraft is navigating to) lies within a CSR, the algorithm searches for the first waypoint outside the CSR again (=destination). It then uses these two waypoints as origin and destination for the route around the CSR, which is determined using quad trees, potential fields and the A* algorithm [(Rivera et al. 2024)](#references). Once a route was found, it replaces the waypoints within the CSR with the new ones. This is accomplished with the `ADDWPT` command.
+
+### References
+Rivera, Josue N., and Dengfeng Sun. "Multi-Scale Cell Decomposition for Path Planning using Restrictive Routing Potential Fields." arXiv preprint arXiv:2408.02786 (2024).
+
 # Personal BlueSky Manual
 Commands, code snippets, and simulator's behavior that we consider important.
 
@@ -118,4 +128,4 @@ This project exists thanks to all the people who contribute to [BlueSky](https:/
 
 [GNU](LICENSE) © TU Delft.
 - Eurocontrol data from [https://www.eurocontrol.int/dashboard/rnd-data-archive](Aviation data for research)
-- Sector information from [https://ais.nav.pt/online-eaip-en/]
+- Sector information from [https://ais.nav.pt/online-eaip-en/](NAV Portugal)
