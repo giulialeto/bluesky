@@ -136,14 +136,14 @@ class Assignment(core.Entity):
         # stack.stack(f'COLOR CSR_POLY_HC3 {coloring["CSR"]}')
 
         # BOXES
-        stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
-        stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
-
-        stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
-        stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
-
-        stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
-        stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
+        # stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
+        # stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
+        #
+        # stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
+        # stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
+        #
+        # stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
+        # stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
 
 
     # -------------------------------------------------------------------------------
@@ -241,6 +241,19 @@ class Assignment(core.Entity):
     def plot_potfields(self, enable: "bool"):
         print(f"Plot potential fields: {enable}")
         self.plot_potential_fields = enable
+
+
+    @stack.command(name="ADD_BOX")
+    def add_hardcoded_box(self, box_id: int):
+        if box_id == 1:
+            stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
+            stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
+        elif box_id == 2:
+            stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
+            stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
+        elif box_id == 3:
+            stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
+            stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
 
 
     # -------------------------------------------------------------------------------
