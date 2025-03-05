@@ -116,6 +116,23 @@ def _potential_field(ac_id, start, end, fc, plot=False):
     return route_path
 
 
+def _remove_consecutive_duplicates(coords, tol=1e-5):
+    if len(coords) == 0:
+        return coords
+
+    filtered_coords = [coords[0]]  # Start with the first coordinate
+
+    for i in range(1, len(coords)):
+        prev_lat, prev_lon = filtered_coords[-1]
+        curr_lat, curr_lon = coords[i]
+
+        # Use np.isclose to compare floating points with a tolerance
+        if not (np.isclose(curr_lat, prev_lat, atol=tol) or np.isclose(curr_lon, prev_lon, atol=tol)):
+            filtered_coords.append(coords[i])
+
+    return np.array(filtered_coords)  # Convert back to ndarray for consistency
+
+
 def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False):
     """ Find a route around an obstacle using potential fields.
         Args:
@@ -189,6 +206,7 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
 
     # Add the new waypoints to the trajectory
     wpt_before = ac_route.wpname[ac_route.iactwp]  # the starting wpt
+    path = _remove_consecutive_duplicates(path)
     for index, wpt in enumerate(path[::-1]):
         stack.stack(f"ADDWPT {ac_id} {wpt[1]},{wpt[0]} 0 0 {wpt_before}")
 

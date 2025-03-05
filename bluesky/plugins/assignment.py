@@ -272,13 +272,13 @@ class Assignment(core.Entity):
     def check_ac_intersect_csr(self):
         if not self.reroute_around_CSRs:
             return
-        all_aircrafts = traf.id
-        for ac_idx, ac_id in enumerate(all_aircrafts):
+        for ac_id in traf.id: # all_aircrafts:
+            ac_idx = traf.id2idx(ac_id)
             ac_route = traf.ap.route[ac_idx]  # get aircraft trajectory
 
             # do not intervene when aircraft is heading to destination
             if ac_route.iactwp + 1 == len(ac_route.wpname):
-                return
+                continue
 
             # get one waypoint ahead of the one the aircraft is heading to, to still be able to diverge on time
             ac_coords = {
