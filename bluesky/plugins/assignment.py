@@ -189,14 +189,14 @@ class Assignment(core.Entity):
                         # color the active sectors
                         stack.stack(f"COLOR {sector} {coloring['sector']}")
 
-
-            if self.sectors.empty:
-                # add the FIR
-                _plot_sectors()
-                # store sector history in a pd.DataFrame
-                self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
-                self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
-            else:
+            # if self.sectors.empty:
+            #     # add the FIR
+            #     _plot_sectors()
+            #     # store sector history in a pd.DataFrame
+            #     self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
+            #     self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
+            # else:
+            if not self.sectors.empty:
                 # check if the last sector setting is the same as the current one
                 last_setting = self.sectors.iloc[-1][self.sectors.filter(regex="sector", axis=1).columns].to_dict()
                 new_setting = selected_sectors.iloc[0].to_dict()
@@ -215,12 +215,36 @@ class Assignment(core.Entity):
                     self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                     self.sectors.iloc[-2, self.sectors.columns.get_loc('to')] = sim.simt
                     self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
+                    
+                    # Print header
+                    stack.stack(f"ECHO {' '.join(self.sectors.columns)}")
+
+                    # Print each row on a separate line
+                    for _, row in self.sectors.iterrows():
+                        stack.stack(f"ECHO {' '.join(map(str, row.values))}")
             print(self.sectors)
         else:
             # empty traffic object, go for FIR
             if "DNCSVM" not in areafilter.basic_shapes.keys():
                 stack.stack(globals()["DNCSVM_stack"])
                 stack.stack(f"COLOR DNCSVM {coloring['sector']}")
+                # store sector history in a pd.DataFrame
+                header = []
+                sector_combinations = []
+                for r in range(1, max_amount_sectors + 1):
+                    header.append(f"sector_{r}")
+                sector_combinations.append(['DNCSVM'] + [None] * (max_amount_sectors - 1))
+
+                selected_sectors = pd.DataFrame(sector_combinations, columns=header)
+                self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
+                self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
+                
+                # Print header
+                stack.stack(f"ECHO {' '.join(self.sectors.columns)}")
+
+                # Print each row on a separate line
+                for _, row in self.sectors.iterrows():
+                    stack.stack(f"ECHO {' '.join(map(str, row.values))}")
 
     # -------------------------------------------------------------------------------
     #   Stack commands for CSR (climate sensitive region) avoidance

@@ -894,8 +894,8 @@ class GLBuffer(QOpenGLBuffer):
         else:
             self.allocate(size)
         # Test if allocated size is as requested
-        if self.size() != size:
-            print(f'GLBuffer: Warning: could not allocate buffer of size {size}. Actual size is {self.size()}')
+        # if self.size() != size:
+            # print(f'GLBuffer: Warning: could not allocate buffer of size {size}. Actual size is {self.size()}')
 
     def update(self, data, offset=0, size=None):
         ''' Send new data to this GL buffer. '''
@@ -903,8 +903,8 @@ class GLBuffer(QOpenGLBuffer):
         size = size or dsize
         self.bind()
         if size > self.size() - offset:
-            print(f'GLBuffer: Warning, trying to send more data ({size} bytes)'
-                  f'to buffer than allocated size ({self.size()} bytes).')
+            # print(f'GLBuffer: Warning, trying to send more data ({size} bytes)'
+                #   f'to buffer than allocated size ({self.size()} bytes).')
             size = self.size() - offset
         
         self.write(offset, dbuf, size)
