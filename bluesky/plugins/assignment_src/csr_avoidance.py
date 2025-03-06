@@ -208,10 +208,12 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
     wpt_before = ac_route.wpname[ac_route.iactwp]  # the starting wpt
     path = _remove_consecutive_duplicates(path)
     for index, wpt in enumerate(path[::-1]):
-        stack.stack(f"ADDWPT {ac_id} {wpt[1]},{wpt[0]} 0 0 {wpt_before}")
+        stack.stack(f"ADDWPT {ac_id} {wpt[1]},{wpt[0]} ,,, {wpt_before}")  # need 3 commas to specify the last arg
 
     # Delete the old waypoints from the route
     for wp in wpts_to_delete:
         stack.stack(f"DELWPT {ac_id} {wp}")
 
+    stack.stack(f"LNAV {ac_id} ON")
+    stack.stack(f"VNAV {ac_id} ON")
     return True
