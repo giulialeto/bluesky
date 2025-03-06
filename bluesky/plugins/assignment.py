@@ -48,8 +48,6 @@ feasible_sector_combinations = [
     'DNCS', 'DNCV', 'DNSV', 'DNVM', 'DCSV', 'DCVM', 'DSVM', 'NCSV', 'NCVM', 
     'CSVM', 'DNCSV', 'DNCVM', 'DNSVM', 'DCSVM', 'NCSVM', 'DNCSVM'
 ]
-max_amount_sectors = 3  # Depends on the availability of ATCos
-max_aircraft_allowed = 2  # Soft constraint for the aircraft
 coloring = {
     "sector": "white",
     "CSR": "0,255,0"
@@ -115,7 +113,6 @@ class Assignment(core.Entity):
     def __init__(self):
         super().__init__()
         # Variables for ATCO
-        self.sectors = pd.DataFrame(columns=[f"sector_{i}" for i in range(1, max_amount_sectors + 1)] + ["from", "to"])
 
         # Variables for CSR
         self.polygon_id_count = 0
@@ -123,6 +120,9 @@ class Assignment(core.Entity):
         self.create_random_CSRs = False
         self.reroute_around_CSRs = True
         self.plot_potential_fields = False
+        self.max_amount_sectors = 3  # Depends on the availability of ATCos
+        self.max_aircraft_allowed = 2  # Soft constraint for the aircraft
+        self.sectors = pd.DataFrame(columns=[f"sector_{i}" for i in range(1, self.max_amount_sectors + 1)] + ["from", "to"])
 
         # Init hardcoded obstacles for DEMO
         # POLYGONS
@@ -145,6 +145,17 @@ class Assignment(core.Entity):
         # stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
         # stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
 
+    # -------------------------------------------------------------------------------
+    #   Stack commands for sector opening plans based on ATCO workload
+    # -------------------------------------------------------------------------------
+
+    # @stack.command(name="AVAILABLE_ATCO")
+    # def change_available_ATCO(self, available_atco: int):
+    #     self.max_amount_sectors = available_atco
+
+    @stack.command(name="ALLOWED_AIRCRAFT")
+    def change_allowed_aircraft(self, allowed_aircraft: int):
+        self.max_aircraft_allowed = allowed_aircraft
 
     # -------------------------------------------------------------------------------
     #   Periodically timed functions for ATCO workload
@@ -152,7 +163,8 @@ class Assignment(core.Entity):
     @core.timed_function(name='sector_opening', dt=workload_evaluation_dt)
     def sector_count(self):
         # red('WORKLOAD EVALUATION')
-
+        red(self.max_amount_sectors)
+        blue(self.max_aircraft_allowed)
         # Get current location of all aircraft
         current_location_df = get_current_location(traf)
         # Get the next waypoint of all aircraft
@@ -167,11 +179,11 @@ class Assignment(core.Entity):
         if not isinstance(sector_count, dict):
             # Get feasible sector combinations (depends only on the available ATCOs, encoded in max_amount_sectors)
             # TODO update live during the simulation the max_amount_sectors through stack commands
-            feasible_sector_combinations_with_ATCO_available = get_feasible_sector_combinations_with_ATCO_available(feasible_sector_combinations, max_amount_sectors)
+            feasible_sector_combinations_with_ATCO_available = get_feasible_sector_combinations_with_ATCO_available(feasible_sector_combinations, self.max_amount_sectors)
             # Get the number of aircraft in each feasible sector combination
             sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns = sector_count_in_feasible_combinations(feasible_sector_combinations_with_ATCO_available, sector_count)
             # Select the best grouping of sectors
-            selected_sectors = select_best_grouping(sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns, max_aircraft_allowed)
+            selected_sectors = select_best_grouping(sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns, self.max_aircraft_allowed)
             # yellow(f'sector_count_feasible_sector_combinations_with_ATCO_available {sector_count_feasible_sector_combinations_with_ATCO_available}')
             green(f'select_best_grouping {selected_sectors}')
             stack.stack(f"ECHO {' '.join(selected_sectors.columns)}")
@@ -237,17 +249,17 @@ class Assignment(core.Entity):
                 header = []
                 sector_combinations = []
 
-                header = [f"sector_{r}" for r in range(1, max_amount_sectors + 1)]
+                header = [f"sector_{r}" for r in range(1, self.max_amount_sectors + 1)]
                 
-                sector_combinations = ['DNCSVM'] + [None] * (max_amount_sectors - 1)
+                sector_combinations = ['DNCSVM'] + [None] * (self.max_amount_sectors - 1)
 
                 selected_sectors = pd.DataFrame([sector_combinations], columns=header)
                 self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                 self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
                 
                 # print in console the chosen sector and the amount of aircraft in each sector
-                header.extend([f"ac_count_sector_{r}" for r in range(1, max_amount_sectors + 1)])
-                sector_combinations_count = ['0'] * max_amount_sectors
+                header.extend([f"ac_count_sector_{r}" for r in range(1, self.max_amount_sectors + 1)])
+                sector_combinations_count = ['0'] * self.max_amount_sectors
                 sector_combinations = sector_combinations + sector_combinations_count
 
                 selected_sectors = pd.DataFrame([sector_combinations], columns=header)
