@@ -174,6 +174,9 @@ class Assignment(core.Entity):
             selected_sectors = select_best_grouping(sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns, max_aircraft_allowed)
             # yellow(f'sector_count_feasible_sector_combinations_with_ATCO_available {sector_count_feasible_sector_combinations_with_ATCO_available}')
             green(f'select_best_grouping {selected_sectors}')
+            stack.stack(f"ECHO {' '.join(selected_sectors.columns)}")
+            stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}") 
+
             selected_sectors.drop(columns='ac_count_sector_1', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_2', inplace=True)
             selected_sectors.drop(columns='ac_count_sector_3', inplace=True)
@@ -216,35 +219,42 @@ class Assignment(core.Entity):
                     self.sectors.iloc[-2, self.sectors.columns.get_loc('to')] = sim.simt
                     self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
                     
-                    # Print header
-                    stack.stack(f"ECHO {' '.join(self.sectors.columns)}")
+                    # # Print header
+                    # stack.stack(f"ECHO {' '.join(self.sectors.columns)}")
 
-                    # Print each row on a separate line
-                    for _, row in self.sectors.iterrows():
-                        stack.stack(f"ECHO {' '.join(map(str, row.values))}")
+                    # # Print each row on a separate line
+                    # for _, row in self.sectors.iterrows():
+                    #     stack.stack(f"ECHO {' '.join(map(str, row.values))}")
+
+
             print(self.sectors)
-        else:
-            # empty traffic object, go for FIR
+        else: # empty traffic object, go for FIR
+            
             if "DNCSVM" not in areafilter.basic_shapes.keys():
                 stack.stack(globals()["DNCSVM_stack"])
                 stack.stack(f"COLOR DNCSVM {coloring['sector']}")
                 # store sector history in a pd.DataFrame
                 header = []
                 sector_combinations = []
-                for r in range(1, max_amount_sectors + 1):
-                    header.append(f"sector_{r}")
-                sector_combinations.append(['DNCSVM'] + [None] * (max_amount_sectors - 1))
 
-                selected_sectors = pd.DataFrame(sector_combinations, columns=header)
+                header = [f"sector_{r}" for r in range(1, max_amount_sectors + 1)]
+                
+                sector_combinations = ['DNCSVM'] + [None] * (max_amount_sectors - 1)
+
+                selected_sectors = pd.DataFrame([sector_combinations], columns=header)
                 self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
                 self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
                 
-                # Print header
-                stack.stack(f"ECHO {' '.join(self.sectors.columns)}")
+                # print in console the chosen sector and the amount of aircraft in each sector
+                header.extend([f"ac_count_sector_{r}" for r in range(1, max_amount_sectors + 1)])
+                sector_combinations_count = ['0'] * max_amount_sectors
+                sector_combinations = sector_combinations + sector_combinations_count
 
-                # Print each row on a separate line
-                for _, row in self.sectors.iterrows():
-                    stack.stack(f"ECHO {' '.join(map(str, row.values))}")
+                selected_sectors = pd.DataFrame([sector_combinations], columns=header)
+                
+                # Print in console
+                stack.stack(f"ECHO {' '.join(selected_sectors.columns)}")
+                stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}") 
 
     # -------------------------------------------------------------------------------
     #   Stack commands for CSR (climate sensitive region) avoidance
