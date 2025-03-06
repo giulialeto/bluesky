@@ -136,14 +136,14 @@ class Assignment(core.Entity):
         # stack.stack(f'COLOR CSR_POLY_HC3 {coloring["CSR"]}')
 
         # BOXES
-        stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
-        stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
-
-        stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
-        stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
-
-        stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
-        stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
+        # stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
+        # stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
+        #
+        # stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
+        # stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
+        #
+        # stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
+        # stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
 
 
     # -------------------------------------------------------------------------------
@@ -267,6 +267,19 @@ class Assignment(core.Entity):
         self.plot_potential_fields = enable
 
 
+    @stack.command(name="ADD_BOX")
+    def add_hardcoded_box(self, box_id: int):
+        if box_id == 1:
+            stack.stack("BOX CSR_BOX_HC1 46.419242,-4.647985 44.151525,-0.072488")
+            stack.stack(f'COLOR CSR_BOX_HC1 {coloring["CSR"]}')
+        elif box_id == 2:
+            stack.stack("BOX CSR_BOX_HC2 42.326925,-9.727867 41.710363,-5.836893")
+            stack.stack(f'COLOR CSR_BOX_HC2 {coloring["CSR"]}')
+        elif box_id == 3:
+            stack.stack("BOX CSR_BOX_HC3 40.033143,-9.83595 39.459697,-6.593472")
+            stack.stack(f'COLOR CSR_BOX_HC3 {coloring["CSR"]}')
+
+
     # -------------------------------------------------------------------------------
     #   Periodically timed functions for CSR (climate sensitive region) avoidance
     # -------------------------------------------------------------------------------
@@ -296,13 +309,13 @@ class Assignment(core.Entity):
     def check_ac_intersect_csr(self):
         if not self.reroute_around_CSRs:
             return
-        all_aircrafts = traf.id
-        for ac_idx, ac_id in enumerate(all_aircrafts):
+        for ac_id in traf.id: # all_aircrafts:
+            ac_idx = traf.id2idx(ac_id)
             ac_route = traf.ap.route[ac_idx]  # get aircraft trajectory
 
             # do not intervene when aircraft is heading to destination
             if ac_route.iactwp + 1 == len(ac_route.wpname):
-                return
+                continue
 
             # get one waypoint ahead of the one the aircraft is heading to, to still be able to diverge on time
             ac_coords = {
