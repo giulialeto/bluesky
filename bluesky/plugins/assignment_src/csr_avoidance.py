@@ -192,7 +192,7 @@ def reroute_using_potential_field(ac_id, ac_route, shape, shape_name, plot=False
         print("Try again to find a route around the obstacle.")
         idx_first_outside += 1
         try_count += 1
-        if idx_first_outside == len(upcoming_traj_coords) or try_count == 5:
+        if idx_first_outside >= len(upcoming_traj_coords) - 1 or try_count == 5:  # make sure to always keep destination
             print("Couldn't find any route around the obstacle.")
             return False
         coords_first_outside = upcoming_traj_coords[idx_first_outside]
