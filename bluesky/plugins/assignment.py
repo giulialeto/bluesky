@@ -121,7 +121,7 @@ class Assignment(core.Entity):
         self.reroute_around_CSRs = True
         self.plot_potential_fields = False
         self.max_amount_sectors = 3  # Depends on the availability of ATCos
-        self.max_aircraft_allowed = 2  # Soft constraint for the aircraft
+        self.max_aircraft_allowed = 10  # Soft constraint for the aircraft
         self.sectors = pd.DataFrame(columns=[f"sector_{i}" for i in range(1, self.max_amount_sectors + 1)] + ["from", "to"])
 
         # Init hardcoded obstacles for DEMO
@@ -149,9 +149,9 @@ class Assignment(core.Entity):
     #   Stack commands for sector opening plans based on ATCO workload
     # -------------------------------------------------------------------------------
 
-    # @stack.command(name="AVAILABLE_ATCO")
-    # def change_available_ATCO(self, available_atco: int):
-    #     self.max_amount_sectors = available_atco
+    @stack.command(name="AVAILABLE_ATCO")
+    def change_available_ATCO(self, available_atco: int):
+        self.max_amount_sectors = available_atco
 
     @stack.command(name="ALLOWED_AIRCRAFT")
     def change_allowed_aircraft(self, allowed_aircraft: int):
@@ -189,9 +189,8 @@ class Assignment(core.Entity):
             stack.stack(f"ECHO {' '.join(selected_sectors.columns)}")
             stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}") 
 
-            selected_sectors.drop(columns='ac_count_sector_1', inplace=True)
-            selected_sectors.drop(columns='ac_count_sector_2', inplace=True)
-            selected_sectors.drop(columns='ac_count_sector_3', inplace=True)
+            for r in range(1, self.max_amount_sectors + 1):
+                selected_sectors.drop(columns=f'ac_count_sector_{r}', inplace=True)
 
             # using a stack command, create POLY and color them
             def _plot_sectors():
