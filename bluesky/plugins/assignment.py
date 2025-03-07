@@ -123,6 +123,7 @@ class Assignment(core.Entity):
         self.max_amount_sectors = 3  # Depends on the availability of ATCos
         self.max_aircraft_allowed = 10  # Soft constraint for the aircraft
         self.sectors = pd.DataFrame(columns=[f"sector_{i}" for i in range(1, self.max_amount_sectors + 1)] + ["from", "to"])
+        self.sectors_occupancy = pd.DataFrame(columns=[f"sector_{i}" for i in range(1, self.max_amount_sectors + 1)] + [f"ac_count_sector_{i}" for i in range(1, self.max_amount_sectors + 1)] + ["UTC"])
 
         # Init hardcoded obstacles for DEMO
         # POLYGONS
@@ -163,8 +164,8 @@ class Assignment(core.Entity):
     @core.timed_function(name='sector_opening', dt=workload_evaluation_dt)
     def sector_count(self):
         # red('WORKLOAD EVALUATION')
-        red(self.max_amount_sectors)
-        blue(self.max_aircraft_allowed)
+        # red(self.max_amount_sectors)
+        # blue(self.max_aircraft_allowed)
         # Get current location of all aircraft
         current_location_df = get_current_location(traf)
         # Get the next waypoint of all aircraft
@@ -185,9 +186,12 @@ class Assignment(core.Entity):
             # Select the best grouping of sectors
             selected_sectors = select_best_grouping(sector_count_feasible_sector_combinations_with_ATCO_available, ac_count_columns, self.max_aircraft_allowed)
             # yellow(f'sector_count_feasible_sector_combinations_with_ATCO_available {sector_count_feasible_sector_combinations_with_ATCO_available}')
-            green(f'select_best_grouping {selected_sectors}')
+            # green(f'select_best_grouping {selected_sectors}')
             stack.stack(f"ECHO {' '.join(selected_sectors.columns)}")
             stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}") 
+            self.sectors_occupancy = pd.concat([self.sectors_occupancy, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
+            self.sectors_occupancy.iloc[-1, self.sectors_occupancy.columns.get_loc('UTC')] = sim.utc
+            green(self.sectors_occupancy)
 
             for r in range(1, self.max_amount_sectors + 1):
                 selected_sectors.drop(columns=f'ac_count_sector_{r}', inplace=True)
@@ -240,33 +244,41 @@ class Assignment(core.Entity):
 
             print(self.sectors)
         else: # empty traffic object, go for FIR
+            header = []
+            sector_combinations = []
+
+            header = [f"sector_{r}" for r in range(1, self.max_amount_sectors + 1)]
             
+            sector_combinations = ['DNCSVM'] + [None] * (self.max_amount_sectors - 1)
+
+            selected_combinations_df = pd.DataFrame([sector_combinations], columns=header)
+
+            # print in console the chosen sector and the amount of aircraft in each sector
+            # header_selected_sectors.extend([f"ac_count_sector_{r}" for r in range(1, self.max_amount_sectors + 1)])
+            print(header)
+            header_selected_sectors = header + [f"ac_count_sector_{r}" for r in range(1, self.max_amount_sectors + 1)]
+
+            sector_combinations_count = ['0'] * self.max_amount_sectors
+            selected_sectors = sector_combinations + sector_combinations_count
+
+            selected_sectors = pd.DataFrame([selected_sectors], columns=header_selected_sectors)
+
+
             if "DNCSVM" not in areafilter.basic_shapes.keys():
                 stack.stack(globals()["DNCSVM_stack"])
                 stack.stack(f"COLOR DNCSVM {coloring['sector']}")
                 # store sector history in a pd.DataFrame
-                header = []
-                sector_combinations = []
-
-                header = [f"sector_{r}" for r in range(1, self.max_amount_sectors + 1)]
-                
-                sector_combinations = ['DNCSVM'] + [None] * (self.max_amount_sectors - 1)
-
-                selected_sectors = pd.DataFrame([sector_combinations], columns=header)
-                self.sectors = pd.concat([self.sectors, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
-                self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = sim.simt
-                
-                # print in console the chosen sector and the amount of aircraft in each sector
-                header.extend([f"ac_count_sector_{r}" for r in range(1, self.max_amount_sectors + 1)])
-                sector_combinations_count = ['0'] * self.max_amount_sectors
-                sector_combinations = sector_combinations + sector_combinations_count
-
-                selected_sectors = pd.DataFrame([sector_combinations], columns=header)
-                
+                self.sectors = pd.concat([self.sectors, selected_combinations_df.iloc[0].to_frame().T], ignore_index=True)
+                self.sectors.iloc[-1, self.sectors.columns.get_loc('from')] = 0
+                                
                 # Print in console
                 stack.stack(f"ECHO {' '.join(selected_sectors.columns)}")
-                stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}") 
+                stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}")
 
+            self.sectors_occupancy = pd.concat([self.sectors_occupancy, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
+            self.sectors_occupancy.iloc[-1, self.sectors_occupancy.columns.get_loc('UTC')] = sim.utc
+            green(self.sectors_occupancy)
+            print(sim.utc)
     # -------------------------------------------------------------------------------
     #   Stack commands for CSR (climate sensitive region) avoidance
     # -------------------------------------------------------------------------------
