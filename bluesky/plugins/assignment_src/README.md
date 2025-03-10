@@ -1,8 +1,6 @@
 # ATM BlueSky Assignment
 As part of the Air Traffic Management (ATM) lecture at TU Delft, 2025.
 
-... TODO add some description
-
 ## Table of Contents
 
 - [Background](#background)
@@ -43,7 +41,9 @@ Run BlueSky using `python BlueSky.py` and activate the plugin with `PLUGIN ASSIG
 To load the historic air traffic data, request the scenario file from the authors and load it using `PCALL scenario_filename.SCN`.
 
 ### Flight sector functionality
-...
+- The workload evaluation function is active by default, with the assumption that 3 air traffic controllers (ATCOs) are available and that a maximum of 10 aircraft can be handled at the same time by 1 ATCO. Two options are available as stack commands. `AVAILABLE_ATCO` can be set from 1 to 6 (maximum number of available sector options). `ALLOWED_AIRCRAFT` can be used as a soft constraint to restrict the number of aircraft allowed in each seector.
+- How the algorithm works: Every 15 minutes, the workload prediction algorithm is triggered, making a new sector opening plan based on the current secctor count and the estimation of the sector count for the future 15 minutes time span, based on the RTAs of the flights at the next waypoints of the flight plan. The algorithm favors opening as little sector a possible while the number of allowed sectors is below the maximum allowed, and to balance workload amonts the available controllers when that number is exceeded.
+- The workload algorithm currently only supports the portuguese upper airspace, for which the most commonly used sectors have been imported. Extention to other airspaces is straightforward. 
 
 ### CSR functionality
 - There are 3 boolean stack functions available: `CREATE_CSR` to generate random CSRs within the Portuguese airspace, `AVOID_CSR` to enable or disable the rerouting around CSR regions, and `PLOT_POTFIELD` to visualize the potential field and the graph network with the chosen route.
