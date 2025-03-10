@@ -72,6 +72,15 @@ def get_future_location(traf, current_time, time_horizon):
 
     return future_waypoints_df
 
+def get_departing_aircraft(scen_commands_df, current_time, time_horizon):
+
+    print(current_time)
+
+    departing_aircraft_df = scen_commands_df[(scen_commands_df[0] >= current_time) & (scen_commands_df[0] <= time_horizon) & scen_commands_df[1].str.contains('CRE', na=False)]
+
+    # parse 
+    return departing_aircraft_df
+
 def get_sector_count(sector_list, current_location_df, future_waypoints_df):
     """
     Count the number of aircraft in each sector.
@@ -200,6 +209,17 @@ def select_best_grouping(filtered_combinations, ac_count_columns, max_aircraft_a
     if max_max_ac_count <= max_aircraft_allowed:
         # Filter the DataFrame to keep only rows where the maximum aircraft count is the highest found
         selected_sectors = filtered_combinations[filtered_combinations['max_ac_count'] == max_max_ac_count].drop(columns=['max_ac_count'])
+        return selected_sectors
+
+    filtered_combinations["All_Less_Than_allowed_aircraft"] = filtered_combinations[ac_count_columns].lt(max_aircraft_allowed).all(axis=1)
+
+    if filtered_combinations["All_Less_Than_allowed_aircraft"].any():
+        # Filter the DataFrame to keep only rows where the maximum aircraft count is the highest found
+        selected_sectors = filtered_combinations[filtered_combinations['All_Less_Than_allowed_aircraft'] == True].drop(columns=['All_Less_Than_allowed_aircraft'])
+        
+        max_max_ac_count_selected_sectoors = selected_sectors['max_ac_count'].max()
+
+        selected_sectors = selected_sectors[selected_sectors['max_ac_count'] == max_max_ac_count_selected_sectoors].drop(columns=['max_ac_count'])
 
         # Count the number of None values in each row
         none_counts = selected_sectors.isna().sum(axis=1)
@@ -214,6 +234,8 @@ def select_best_grouping(filtered_combinations, ac_count_columns, max_aircraft_a
             selected_sectors = selected_sectors.iloc[:1]
         return selected_sectors
     
+    filtered_combinations = filtered_combinations.drop(columns=['All_Less_Than_allowed_aircraft'])
+
     # If the maximum value of the aircraft count is greater than the maximum number of aircraft allowed,
     # we will prioritize sectors in which the maximum aircraft count is at its lowest, and where the aircraft count in the other sectors is balanced
     
