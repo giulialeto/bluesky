@@ -1,6 +1,7 @@
 # Automatically generated directories and files
 output
 cache
+scenario
 scenario/ic.scn
 bluesky/resources/grib
 bluesky/resources/netcdf
