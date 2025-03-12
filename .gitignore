@@ -1,5 +1,6 @@
 # Automatically generated directories and files
 output
+#plugins
 cache
 scenario
 scenario/ic.scn
@@ -94,5 +95,8 @@ ssd.obj
 *-checkpoint.py
 *-checkpoint.ipynb
 .ropeproject/config.py
+
+# Custom files added by Giulia Leto
 scenario/GL-scenarios/command_tester.scn
 /bluesky/plugins/fazlur
+/src/larp
