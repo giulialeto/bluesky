@@ -1,5 +1,4 @@
-# AI4REALNET D1.2 Scripted automation
-As part of the Air Traffic Management (ATM) lecture at TU Delft, 2025.
+# AI4REALNET D1.2 Scripted automation (workload and re-routing) plugin for BlueSky,supporting use case ATM-UC2
 
 ## Table of Contents
 
@@ -52,65 +51,6 @@ To load the historic air traffic data, request the scenario file from the author
 
 ### References
 Rivera, Josue N., and Dengfeng Sun. "Multi-Scale Cell Decomposition for Path Planning using Restrictive Routing Potential Fields." arXiv preprint arXiv:2408.02786 (2024).
-
-# Relevant BlueSky documentation
-Commands, code snippets, and simulator's behavior that we consider important.
-
-## General
-- Aircraft only disappear from the simulation if a) the runway is given in the aircraft definition or b) taxiing is disabled, i.e. `TAXI OFF`.
-
-## Scenario files
-- Historic trajectories can be mimicked using the `RTA` command:
-
-```
-# Create a flight KL123, using the B738 aircraft, from Paris to Lanzarote.
-00:00:00.00>CRE KL123 B738 LFPO 0 0 400
-00:00:00.00>ORIG KL123 LFPO
-00:00:00.00>DEST KL123 GCRR
-
-# Create a waypoint wp1 which should be reached at 11:42:00.
-00:00:00.00>DEFWPT wp1 48.72333,2.37945, FIX
-00:00:00.00>ADDWPT KL123 wp1 0
-00:00:00.00>RTA KL123 wp1 11:42:00.00
-```
-
-- New waypoints can be inserted into the trajectory, e.g. after a specific waypoint:
-```
-# Add three waypoints to flight KL123.
-00:00:00.00>ADDWPT KL123 wp1
-00:00:00.00>ADDWPT KL123 wp2
-00:00:00.00>ADDWPT KL123 wp3
-
-# Add waypoint wp23 in between wp2 and wp3
-00:00:00.00>DEFWPT wp23 lat,lon FIX
-00:00:00.00>ADDWPT KL123 wp23 0 0 wp2
-```
-
-## Python code
-- get the trajectory of a flight
-
-```python
-from bluesky import traf
-ac_idx = traf.id2idx("KL123")
-if ac_idx != -1:
-    trajectory = traf.ap.route[ac_idx]
-```
-
-- add a new stack command with a boolean parameter that can be called via `DEMO1`
-```python
-from bluesky import stack
-@stack.command(name="DEMO1")
-def demo_1(self, enable: "bool"):
-    print(f"Feature enabled: {enable}")
-```
-
-```
-# Call it using any of the three options
-00:00:00.00>DEMO1 ON/OFF
-00:00:00.00>DEMO1 1/0
-00:00:00.00>DEMO1 True/False
-```
-
 
 ## Authors
 
