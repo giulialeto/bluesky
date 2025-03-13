@@ -14,31 +14,6 @@ from bluesky.plugins.assignment_src.atco_workload import *
 from bluesky.plugins.assignment_src.csr_avoidance import *
 from bluesky.plugins.assignment_src.assignment_sectors import *
 
-### debugging aid
-def black(text):
-    print('\033[30m', text, '\033[0m', sep='')
-
-def red(text):
-    print('\033[31m', text, '\033[0m', sep='')
-
-def green(text):
-    print('\033[32m', text, '\033[0m', sep='')
-
-def yellow(text):
-    print('\033[33m', text, '\033[0m', sep='')
-
-def blue(text):
-    print('\033[34m', text, '\033[0m', sep='')
-
-def magenta(text):
-    print('\033[35m', text, '\033[0m', sep='')
-
-def cyan(text):
-    print('\033[36m', text, '\033[0m', sep='')
-
-def gray(text):
-    print('\033[90m', text, '\033[0m', sep='')
-###
 
 # Global variables
 workload_evaluation_dt = 15*60
@@ -131,9 +106,6 @@ class Assignment(core.Entity):
     # -------------------------------------------------------------------------------
     @core.timed_function(name='sector_opening', dt=workload_evaluation_dt)
     def sector_count(self):
-        # red('WORKLOAD EVALUATION')
-        # red(self.max_amount_sectors)
-        # blue(self.max_aircraft_allowed)
         # Get current location of all aircraft
         current_location_df = get_current_location(traf)
         # Get the next waypoint of all aircraft
@@ -159,7 +131,7 @@ class Assignment(core.Entity):
             stack.stack(f"ECHO {' '.join(selected_sectors.iloc[0].astype(str))}") 
             self.sectors_occupancy = pd.concat([self.sectors_occupancy, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
             self.sectors_occupancy.iloc[-1, self.sectors_occupancy.columns.get_loc('UTC')] = sim.utc
-            green(self.sectors_occupancy)
+            print(self.sectors_occupancy)
 
             for r in range(1, self.max_amount_sectors + 1):
                 selected_sectors.drop(columns=f'ac_count_sector_{r}', inplace=True)
@@ -245,7 +217,7 @@ class Assignment(core.Entity):
 
             self.sectors_occupancy = pd.concat([self.sectors_occupancy, selected_sectors.iloc[0].to_frame().T], ignore_index=True)
             self.sectors_occupancy.iloc[-1, self.sectors_occupancy.columns.get_loc('UTC')] = sim.utc
-            green(self.sectors_occupancy)
+            print(self.sectors_occupancy)
             print(sim.utc)
     # -------------------------------------------------------------------------------
     #   Stack commands for CSR (climate sensitive region) avoidance
