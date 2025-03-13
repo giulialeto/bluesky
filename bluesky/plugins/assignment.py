@@ -116,8 +116,8 @@ class Assignment(core.Entity):
         sector_count = get_sector_count(sector_list, current_location_df, future_waypoints_df)
         # TODO: swap this function with some other metric, resulting in a df numbers assigned to each sector, with higher number representing higher complexity. For example, dynamic density metric
 
-        # sector_count is a dict as long as no aircraft have been spawned
-        if not isinstance(sector_count, dict):
+        # as long as no aircraft have been spawned and there are no aircraft in the airspace, go for FIR (else statement)
+        if not sector_count.empty and sector_count.sum() != 0:
             # Get feasible sector combinations (depends only on the available ATCOs, encoded in max_amount_sectors)
             # TODO update live during the simulation the max_amount_sectors through stack commands
             feasible_sector_combinations_with_ATCO_available = get_feasible_sector_combinations_with_ATCO_available(feasible_sector_combinations, self.max_amount_sectors)

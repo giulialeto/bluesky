@@ -14,7 +14,7 @@ def get_current_location(traf):
     Returns:
         current_location_df (pd.DataFrame): contains columns ['ac_id', 'wpname', 'lat', 'lon', 'alt'] with the current location of all aircraft.
     """
-    current_laction = []
+    current_location = []
 
     for ac_id in traf.id:  # Iterate through all aircraft
         ac_idx = traf.id2idx(ac_id)
@@ -23,10 +23,10 @@ def get_current_location(traf):
         current_lon = traf.lon[ac_idx]  # Get longitude of the aircraft
         current_alt = traf.alt[ac_idx]  # Get altitude of the aircraft
 
-        current_laction.append((ac_id, 'current_location', current_lat, current_lon, current_alt))
+        current_location.append((ac_id, 'current_location', current_lat, current_lon, current_alt))
     
     # Convert list to Pandas DataFrame
-    current_location_df = pd.DataFrame(current_laction, columns=['ac_id', 'wpname', 'lat', 'lon', 'alt'])
+    current_location_df = pd.DataFrame(current_location, columns=['ac_id', 'wpname', 'lat', 'lon', 'alt'])
 
     return current_location_df
 
@@ -93,6 +93,9 @@ def get_sector_count(sector_list, current_location_df, future_waypoints_df):
     Returns:
         sector_count (pd.Series): Contains with the number of aircraft in each sector.
     """
+
+    if future_waypoints_df.empty and current_location_df.empty:
+        return pd.DataFrame()
 
     sector_count_mask = pd.concat([future_waypoints_df, current_location_df], ignore_index=True)
 
