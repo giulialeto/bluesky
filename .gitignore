@@ -97,6 +97,8 @@ ssd.obj
 .ropeproject/config.py
 
 # Custom files added by Giulia Leto
-scenario/GL-scenarios/command_tester.scn
+scenario/command_tester.scn
 /bluesky/plugins/fazlur
 /src/larp
+*.scn
+*.SCN
