@@ -12,6 +12,8 @@ on:
 
 env:
   CIBW_BUILD: cp310* cp311* cp312* cp313*
+  CIBW_ARCHS_WINDOWS: auto64
+  CIBW_ARCHS_LINUX: auto64 aarch64
   CIBW_ARCHS_MACOS: universal2
   # CIBW_ARCHS_MACOS: auto universal2
   CIBW_TEST_SKIP: "*universal2:arm64"
@@ -27,6 +29,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0

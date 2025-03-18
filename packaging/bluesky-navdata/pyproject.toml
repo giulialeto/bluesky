@@ -8,16 +8,21 @@ authors = [
 ]
 
 description = "Navigation data files for the BlueSky Open ATM Simulator"
-readme = "../../README.md"
+readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+
     "Development Status :: 4 - Beta",
 
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
 
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "License :: OSI Approved :: MIT License",
 
     "Operating System :: OS Independent",
 ]
@@ -28,11 +33,10 @@ Homepage = "https://github.com/TUDelft-CNS-ATM/bluesky"
 Issues = "https://github.com/TUDelft-CNS-ATM/bluesky/issues"
 
 [build-system]
-requires = ["hatchling==1.26.3", "hatch-calver"]
+requires = ["hatchling==1.26.3"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-scheme = "calver"
 path = "../../bluesky/resources/navdata/__init__.py"
 
 [tool.hatch.build.force-include]
