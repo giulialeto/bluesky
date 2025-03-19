@@ -1,5 +1,5 @@
 """
-    ATM Assignment 2025
+    AI4REALNET -  Scripted automation (workload and re-routing) plugin for BlueSky
     Authors: Giulia Leto, Jakob Smretschnig
 """
 from random import randint
@@ -9,11 +9,10 @@ import numpy as np
 from bluesky import core, stack, traf, tools, sim  #, settings, navdb, scr, tools
 from bluesky.tools import areafilter
 
-# Import assignment_src dependencies
-from bluesky.plugins.assignment_src.atco_workload import *
-from bluesky.plugins.assignment_src.csr_avoidance import *
-from bluesky.plugins.assignment_src.assignment_sectors import *
-
+# Import dependencies
+from bluesky.plugins.ai4realnet_scripted_automation_src.atco_workload import *
+from bluesky.plugins.ai4realnet_scripted_automation_src.csr_avoidance import *
+from bluesky.plugins.ai4realnet_scripted_automation_src.scripted_automation_sectors import *
 
 # Global variables
 workload_evaluation_dt = 15*60
@@ -37,13 +36,13 @@ coloring = {
 ### function, as it is the way BlueSky recognises this file as a plugin.
 def init_plugin():
     ''' Plugin initialisation function. '''
-    # Instantiate our assignment_src entity
-    assignment = Assignment()
+    # Instantiate our scripted_automation entity
+    ai4realnet_scripted_automation = ScriptedAutomation()
 
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'ASSIGNMENT',
+        'plugin_name':     'AI4REALNET_SCRIPTED_AUTOMATION',
         # The type of this plugin. For now, only simulation plugins are possible.
         'plugin_type':     'sim',
     }
@@ -51,7 +50,7 @@ def init_plugin():
     # init_plugin() should always return a configuration dict.
     return config
 
-class Assignment(core.Entity):
+class ScriptedAutomation(core.Entity):
     ''' Example new entity object for BlueSky. '''
     def __init__(self):
         super().__init__()
@@ -118,6 +117,7 @@ class Assignment(core.Entity):
 
         # as long as no aircraft have been spawned and there are no aircraft in the airspace, go for FIR (else statement)
         if not sector_count.empty and sector_count.sum() != 0:
+            # type(sector_count)
             # Get feasible sector combinations (depends only on the available ATCOs, encoded in max_amount_sectors)
             # TODO update live during the simulation the max_amount_sectors through stack commands
             feasible_sector_combinations_with_ATCO_available = get_feasible_sector_combinations_with_ATCO_available(feasible_sector_combinations, self.max_amount_sectors)

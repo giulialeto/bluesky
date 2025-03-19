@@ -93,10 +93,8 @@ def get_sector_count(sector_list, current_location_df, future_waypoints_df):
     Returns:
         sector_count (pd.Series): Contains with the number of aircraft in each sector.
     """
-
     if future_waypoints_df.empty and current_location_df.empty:
         return pd.DataFrame()
-
     sector_count_mask = pd.concat([future_waypoints_df, current_location_df], ignore_index=True)
 
     sector_count = {}
