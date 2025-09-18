@@ -1,11 +1,18 @@
 from pathlib import Path
 import subprocess
 import traceback
+import math
 
 import bluesky as bs
+from bluesky.core.signal import Signal
 from bluesky.stack.stackbase import Stack, forward, stack
 from bluesky.stack.cmdparser import Command, command, commandgroup
 from bluesky.stack import argparser
+
+
+# Globals
+_sig_echo = Signal('echo')
+
 
 def init():
     ''' client-side stack initialisation. '''
@@ -45,9 +52,23 @@ def process():
                 header = '' if not argstring else e.args[0] if e.args else 'Argument error.'
                 echotext = f'{header}\nUsage:\n{cmdobj.brieftext()}'
                 traceback.print_exc()
+
+        # ----------------------------------------------------------------------
+        # ZOOM command (or use ++++  or --  to zoom in or out)
+        # ----------------------------------------------------------------------
+        elif cmdu[0] in ("+", "=", "-"):
+            # = equals + (same key)
+            nplus = cmdu.count("+") + cmdu.count("=")
+            nmin = cmdu.count("-")
+            fac = math.sqrt(2) ** (nplus - nmin)
+            cmdu = 'ZOOM'
+            cmdobj = Command.cmddict.get(cmdu)
+            if cmdobj:
+                cmdobj(f'IN {fac}')
+
         elif Stack.sender_id is None:
             # If sender_id is None, this stack command originated from the gui. Send it on to the sim
-            forward()
+            forward(target_id=bs.net.act_id)
         # -------------------------------------------------------------------
         # Command not found
         # -------------------------------------------------------------------
@@ -61,10 +82,21 @@ def process():
 
         # Always return on command
         if echotext:
-            bs.scr.echo(echotext, echoflags, Stack.sender_id)
+            echo(echotext, echoflags, Stack.sender_id)
 
     # Clear the processed commands
     Stack.cmdstack.clear()
+
+
+@command(annotations='string')
+def echo(text='', flags=0, sender_id=None):
+        ''' Echo
+
+            Clien-side implementation of ECHO emits the same
+            signal as the one triggered by incoming echo
+            messages.    
+        '''
+        _sig_echo.emit(text, flags, sender_id)
 
 
 @commandgroup(name='HELP', aliases=('?',))

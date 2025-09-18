@@ -1,7 +1,7 @@
 ''' Main simulation-side stack functions. '''
-import math
 from pathlib import Path
 import traceback
+
 import bluesky as bs
 from bluesky.stack.stackbase import Stack, stack, checkscen, forward
 from bluesky.stack.cmdparser import Command, command
@@ -91,16 +91,6 @@ def process(ext_cmds=None):
                     'Traceback printed to terminal.'
                 traceback.print_exc()
 
-        # ----------------------------------------------------------------------
-        # ZOOM command (or use ++++  or --  to zoom in or out)
-        # ----------------------------------------------------------------------
-        elif cmdu[0] in ("+", "=", "-"):
-            # = equals + (same key)
-            nplus = cmdu.count("+") + cmdu.count("=")
-            nmin = cmdu.count("-")
-            bs.scr.zoom(math.sqrt(2) ** (nplus - nmin), absolute=False)
-            cmdu = 'ZOOM'
-
         # -------------------------------------------------------------------
         # Command not found
         # -------------------------------------------------------------------
@@ -123,7 +113,7 @@ def process(ext_cmds=None):
 
         # Always return on command
         if echotext:
-            bs.scr.echo(echotext, echoflags)
+            echo(echotext, echoflags)
 
     # Clear the processed commands
     if ext_cmds is None:
@@ -246,6 +236,21 @@ def merge(source, *args, isrelative=True):
     # execute any commands that are already due
     if callnow:
         process(callnow)
+
+
+@command(annotations='string')
+def echo(text='', flags=0, to_group=b''):
+        ''' Echo
+
+            Simulation-side implementation of ECHO sends echo message on to client.    
+        '''
+        bs.net.send('ECHO', dict(text=text, flags=flags), to_group=to_group)
+
+
+@command(name='INSEDIT')
+def cmdline(text: 'string'):
+    ''' Insert text op edit line in command window. '''
+    bs.net.send(b'CMDLINE', text)
 
 
 @command(aliases=('LOAD', 'OPEN'))

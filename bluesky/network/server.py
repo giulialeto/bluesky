@@ -31,7 +31,7 @@ def split_scenarios(scentime, scencmd):
 
 class Server(Thread):
     ''' Implementation of the BlueSky simulation server. '''
-    def __init__(self, discovery, altconfig=None, startscn=None):
+    def __init__(self, discovery, altconfig=None, startscn=None, workdir=None):
         super().__init__()
         self.spawned_processes = dict()
         self.running = True
@@ -39,11 +39,12 @@ class Server(Thread):
         self.scenarios = []
         self.server_id = genid(groupid=GROUPID_SIM, seqidx=0)
         self.max_group_idx = 0
-        self.nodes = set()
+        self.sim_nodes = set()
         self.all_nodes = set()
         self.avail_nodes = set()
-        
+
         # Information to pass on to spawned nodes
+        self.workdir = workdir
         self.altconfig = altconfig
         self.startscn = startscn
 
@@ -65,10 +66,10 @@ class Server(Thread):
     def quit(self):
         self.running = False
 
-    def sendscenario(self, worker_id):
+    def sendscenario(self, node_id):
         # Send a new scenario to the target sim process
         scen = self.scenarios.pop(0)
-        self.send(b'BATCH', scen, worker_id)
+        self.send(b'BATCH', scen, node_id)
 
     def addnodes(self, count=1, node_ids=None, startscn=None):
         ''' Add [count] nodes to this server. '''
@@ -81,6 +82,8 @@ class Server(Thread):
             args = [sys.executable, '-m', 'bluesky', '--sim', '--groupid', bin2hex(newid)]
             if self.altconfig:
                 args.extend(['--configfile', self.altconfig])
+            if self.workdir:
+                args.extend(['--workdir', self.workdir])
             if startscn:
                 args.extend(['--scenfile', startscn])
             self.spawned_processes[newid] = Popen(args)
@@ -96,6 +99,7 @@ class Server(Thread):
     def run(self):
         ''' The main loop of this server. '''
         print(f'Starting server with id', self.server_id)
+        # For the server, send/recv ports are reversed
         self.sock_recv.bind(f'tcp://*:{bs.settings.send_port}')
         self.sock_send.bind(f'tcp://*:{bs.settings.recv_port}')
 
@@ -150,11 +154,11 @@ class Server(Thread):
                             # This is an initial client, server, or node subscription
                             if msg[0][1] == GROUPID_SIM and msg[0][1:] in self.spawned_processes:
                                 # This is a node owned by this server which has successfully started.
-                                self.nodes.add(msg[0][1:])
-
+                                self.sim_nodes.add(msg[0][1:])
+                                self.send(b'REQUEST', ['STATECHANGE'], msg[0][1:])
                         elif msg[0][0] == MSG_UNSUBSCRIBE and msg[0][1] == GROUPID_SIM and msg[0][1:] in self.spawned_processes:
                             print('Removing node', msg[0][1:])
-                            self.nodes.discard(msg[0][1:])
+                            self.sim_nodes.discard(msg[0][1:])
                     # Always forward
                     self.sock_recv.send_multipart(msg)
                 elif sock == self.sock_recv:
@@ -171,11 +175,11 @@ class Server(Thread):
                             elif isinstance(data, dict):
                                 self.addnodes(**data)
                         elif topic == b'STATECHANGE':
-                            state = data
+                            state = data[1]['simstate']
                             if state < bs.OP:
                                 # If we have batch scenarios waiting, send
-                                # the worker a new scenario, otherwise store it in
-                                # the available worker list
+                                # the simulation node a new scenario, otherwise store it in
+                                # the available simulation node list
                                 if self.scenarios:
                                     self.sendscenario(sender_id)
                                 else:
@@ -191,14 +195,14 @@ class Server(Thread):
                             else:
                                 echomsg = f'Found {len(self.scenarios)} scenarios in batch'
                                 # Send scenario to available nodes (nodes that are in init or hold mode):
-                                while self.avail_workers and self.scenarios:
-                                    worker_id = next(iter(self.avail_workers))
-                                    self.sendscenario(worker_id)
-                                    self.avail_workers.pop(worker_id)
+                                while self.avail_nodes and self.scenarios:
+                                    node_id = next(iter(self.avail_nodes))
+                                    self.sendscenario(node_id)
+                                    self.avail_nodes.discard(node_id)
 
                                 # If there are still scenarios left, determine and
                                 # start the required number of local nodes
-                                reqd_nnodes = min(len(self.scenarios), max(0, self.max_nnodes - len(self.workers)))
+                                reqd_nnodes = min(len(self.scenarios), max(0, self.max_nnodes - len(self.sim_nodes)))
                                 self.addnodes(reqd_nnodes)
                             # ECHO the results to the calling client
                             topic = b'ECHO'
@@ -208,12 +212,13 @@ class Server(Thread):
                         self.sock_send.send_multipart(msg)
         print('Server quit. Stopping nodes:')
         for pid, p in self.spawned_processes.items():
-            print('Stopping node:', pid, end=' ')
-            p.send_signal(signal.SIGTERM)
+            # print('Stopping node:', pid, end=' ')
+            # p.send_signal(signal.SIGTERM)
+            p.terminate()
             p.wait()
             # Inform network that node is removed
             self.sock_recv.send_multipart([b'\x00' + pid])
-            print('done')
+            # print('done')
         print('Closing connections:', end=' ')
         self.poller.unregister(self.sock_recv)
         self.poller.unregister(self.sock_send)

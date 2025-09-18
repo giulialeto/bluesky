@@ -5,7 +5,7 @@ import platform
 from PyQt6.QtWidgets import QApplication as app, QWidget, QMainWindow, \
     QSplashScreen, QTreeWidgetItem, QPushButton, QFileDialog, QDialog, \
     QTreeWidget, QVBoxLayout, QDialogButtonBox, QMenu, QLabel
-from PyQt6.QtCore import Qt, pyqtSlot, QTimer, QItemSelectionModel, QSize, QEvent, pyqtProperty
+from PyQt6.QtCore import Qt, pyqtSlot, QTimer, QItemSelectionModel, QSize, QEvent, pyqtProperty, QDir
 from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6 import uic
 
@@ -126,6 +126,14 @@ class MainWindow(QMainWindow, Base):
     nlos_cur: ss.ActData[int] = ss.ActData(0, group='acdata')
     nlos_tot: ss.ActData[int] = ss.ActData(0, group='acdata')
 
+    show_map: ss.ActData[bool] = ss.ActData(True)
+    show_coast: ss.ActData[bool] = ss.ActData(True)
+    show_wpt: ss.ActData[int] = ss.ActData(1)
+    show_apt: ss.ActData[int] = ss.ActData(1)
+    show_pz: ss.ActData[bool] = ss.ActData(False)
+    show_traf: ss.ActData[bool] = ss.ActData(True)
+    show_lbl: ss.ActData[int] = ss.ActData(2)
+
     @pyqtProperty(str)
     def style(self):
         ''' Returns "dark"" if app is in dark mode, "light" otherwise. '''
@@ -223,8 +231,42 @@ class MainWindow(QMainWindow, Base):
 
     def setStyleSheet(self, contents=''):
         if not contents:
+            QDir.addSearchPath("icons", (bs.resource(bs.settings.gfx_path) / "icons").as_posix())
             with open(bs.resource(bs.settings.gfx_path) / 'bluesky.qss') as style:
                 super().setStyleSheet(style.read())
+
+    @stack.command
+    def swrad(self, switch: 'txt', arg: int|None = None):
+        ''' Switch on/off elements and background of map/radar view 
+        
+            Usage:
+                SWRAD GEO/GRID/APT/VOR/WPT/LABEL/ADSBCOVERAGE/TRAIL/POLY [dt]/[value]
+        '''
+        match switch:
+            case 'GEO':
+                self.show_coast = not self.show_coast
+            case 'SAT':
+                self.show_map = not self.show_map
+            case 'APT':
+                if arg is not None:
+                    self.show_apt = min(2,max(0,arg))
+                else:
+                    self.show_apt = (self.show_apt + 1) % 3
+            case 'WPT':
+                if arg is not None:
+                    self.show_wpt = min(2,max(0,arg))
+                else:
+                    self.show_wpt = (self.show_wpt + 1) % 3
+            case 'LABEL':
+                if arg is not None:
+                    self.show_lbl = min(2,max(0,arg))
+                else:
+                    self.show_lbl = (self.show_lbl + 1) % 3
+            case 'SYM':
+                if arg is None:
+                    arg = 0 if self.show_pz else (2 if self.show_traf else 1)
+                self.show_traf = arg > 0
+                self.show_pz = arg > 1
 
     @stack.command
     def mcre(self, args: 'string'):
@@ -246,8 +288,8 @@ class MainWindow(QMainWindow, Base):
         self.panzoom_event.emit(store)
         return True
 
-    @stack.command(annotations='float/txt', brief='ZOOM IN/OUT/factor')
-    def zoom(self, factor):
+    @stack.commandgroup(brief='ZOOM IN/OUT/factor')
+    def zoom(self, factor: float):
         ''' ZOOM: Zoom in and out in the radar view. 
         
             Arguments:
@@ -255,14 +297,23 @@ class MainWindow(QMainWindow, Base):
                       'factor' to set zoom to specific value.
         '''
         store = ss.get(group='panzoom')
-        if isinstance(factor, float):
-            store.zoom = factor
-        elif factor == 'IN':
-            store.zoom *= 1.4142135623730951
-        elif factor == 'OUT':
-            store.zoom *= 0.7071067811865475
-        else:
-            return False, f'ZOOM: argument {factor} not recognised'
+        store.zoom = factor
+        self.panzoom_event.emit(store)
+        return True
+
+    @zoom.subcommand(name='IN')
+    def zoomin(self, factor:float|None=None):
+        ''' ZOOM IN: change zoom level up, relative to previous value '''
+        store = ss.get(group='panzoom')
+        store.zoom *= (factor or 1.4142135623730951)
+        self.panzoom_event.emit(store)
+        return True
+
+    @zoom.subcommand(name='OUT')
+    def zoomout(self, factor:float|None=None):
+        ''' ZOOM OUT: change zoom level down, relative to previous value '''
+        store = ss.get(group='panzoom')
+        store.zoom *= (factor or 0.7071067811865475)
         self.panzoom_event.emit(store)
         return True
 
