@@ -1,5 +1,5 @@
 '''
-Constants for the CentralisedStaticObstacleSectorCREnv-0 environment.
+Constants for the StaticObstacleEnv-0 environment.
 '''
 
 import numpy as np
@@ -21,6 +21,6 @@ ACTION_FREQUENCY = 10
 
 CENTER = (52., 4.) # TU Delft AE Faculty coordinates
 
-WAYPOINT_DISTANCE_MAX = 400 # KM
+WAYPOINT_DISTANCE_MAX = 170 # KM
 AC_SPD = 150 # kts
 OBSTACLE_AREA_RANGE = (50, 1000) # In NM^2

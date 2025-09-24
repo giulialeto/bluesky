@@ -5,19 +5,21 @@
 from bluesky import core, stack, traf, tools, settings 
 from stable_baselines3 import SAC
 import numpy as np
-import bluesky.plugins.ai4realnet_deploy_RL_tools.CentralisedStaticObstacleCREnv as RLtools
+import bluesky.plugins.ai4realnet_deploy_RL_tools.StaticObstacleCREnv as RLtools
 import bluesky as bs
+
+import debug
 
 # TODO make this such that you can select the algorithm in settings
 # settings.set_variable_defaults(algorithm='SAC')
 algorithm = 'SAC'
-env_name = 'CentralisedStaticObstacleCREnv'
+env_name = 'StaticObstacleCREnv'
 def init_plugin():
-    CentralisedStaticObstacleCR = DeployRL()
+    StaticObstacleCR = DeployRL()
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'DEPLOY_RL_CentralisedStaticObstacleCREnv',
+        'plugin_name':     'DEPLOY_RL_StaticObstacleCREnv',
         # The type of this plugin. For now, only simulation plugins are possible.
         'plugin_type':     'sim',
         }
@@ -63,71 +65,57 @@ class DeployRL(core.Entity):
                 # stack.stack(f"CIRCLE {shape_name}_bounding_circle, {center_latlon[0]}, {center_latlon[1]}, {radius_m/RLtools.constants.NM2KM/1000}")
                 # stack.stack(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
-    @core.timed_function(name='CentralisedStaticObstacleCR', dt=RLtools.constants.ACTION_FREQUENCY)
+    @core.timed_function(name='StaticObstacleCR', dt=RLtools.constants.ACTION_FREQUENCY)
     def update(self):
-        # for id in traf.id:
-        #     idx = traf.id2idx(id)
-        #     obs = self._get_obs(idx)
-        #     clipped_obs = {key: np.clip(arr, -1.2, 1.2) for key, arr in obs.items()}
-        #     action, _ = self.model.predict(clipped_obs, deterministic=True)
-        #     self._set_action(action,idx)
-        # pass
-        obs = self._get_obs()
-    #     clipped_obs = {key: np.clip(arr, -1.2, 1.2) for key, arr in obs.items()}
-        action, _ = self.model.predict(obs, deterministic=True)
-        self._set_action(action)
+        for id in traf.id:
+            ac_idx = traf.id2idx(id)
+            obs = self._get_obs(ac_idx)
+            # clipped_obs = {key: np.clip(arr, -1.2, 1.2) for key, arr in obs.items()}
+            action, _ = self.model.predict(obs, deterministic=True)
+            self._set_action(action, ac_idx)
+    #     obs = self._get_obs()
+    # #     clipped_obs = {key: np.clip(arr, -1.2, 1.2) for key, arr in obs.items()}
+    #     action, _ = self.model.predict(obs, deterministic=True)
+    #     self._set_action(action)
 
-    def _get_obs(self):
-        """
-        Observation is the normalized x and y coordinate of the aircraft
-        """
+    def _get_obs(self, ac_idx):
+        # # """
+        # # Observation is the normalized x and y coordinate of the aircraft
+        # # """
 
         # intruder observation
-        intruder_distance = []
-        intruder_cos_bearing = []
-        intruder_sin_bearing = []
-        intruder_x_difference_speed = []
-        intruder_y_difference_speed = []
+        intruders_lat = np.delete(bs.traf.lat, ac_idx)
+        intruders_lon = np.delete(bs.traf.lon, ac_idx)
+        int_qdr, int_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], intruders_lat, intruders_lon)
 
-        for i in range(len(traf.id)):
-            intruders_lat = np.delete(bs.traf.lat, i)
-            intruders_lon = np.delete(bs.traf.lon, i)
-            int_qdr, int_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[i], bs.traf.lon[i], intruders_lat, intruders_lon)
-            
-            intruder_distance.append(int_dis * RLtools.constants.NM2KM)
+        # index of the closes N_INTRUDERS intruders for arrays of intruders_lat, intruders_lon, int_qdr, int_dis, intruders_speed, intruders_heading: the ownship is excluded a priori in these
+        closest_intruders_idx = np.argsort(int_dis)[:RLtools.constants.NUM_INTRUDERS]
 
-            bearing = bs.traf.hdg[i] - int_qdr
-            for bearing_idx in range(len(bearing)):
-                bearing[bearing_idx] = RLtools.functions.bound_angle_positive_negative_180(bearing[bearing_idx])
+        intruder_distance = int_dis[closest_intruders_idx] * RLtools.constants.NM2KM
 
-            intruder_cos_bearing.append(np.cos(np.deg2rad(bearing)))
-            intruder_sin_bearing.append(np.sin(np.deg2rad(bearing)))
+        bearing = bs.traf.hdg[ac_idx] - int_qdr[closest_intruders_idx]
+        for bearing_idx in range(len(bearing)):
+            bearing[bearing_idx] = RLtools.functions.bound_angle_positive_negative_180(bearing[bearing_idx])
 
-            intruders_heading = np.delete(bs.traf.hdg, i)
-            intruders_speed = np.delete(bs.traf.gs, i)
-            heading_difference = bs.traf.hdg[i] - intruders_heading
-            x_dif = - np.cos(np.deg2rad(heading_difference)) * intruders_speed
-            y_dif = bs.traf.gs[i] - np.sin(np.deg2rad(heading_difference)) * intruders_speed
-            intruder_x_difference_speed.append(x_dif)
-            intruder_y_difference_speed.append(y_dif)
+        intruder_cos_bearing = np.cos(np.deg2rad(bearing))
+        intruder_sin_bearing = np.sin(np.deg2rad(bearing))
+
+        intruders_heading = np.delete(bs.traf.hdg, ac_idx)
+        intruders_speed = np.delete(bs.traf.gs, ac_idx)
+        heading_difference = bs.traf.hdg[ac_idx] - intruders_heading[closest_intruders_idx]
+        intruder_x_difference_speed = - np.cos(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
+        intruder_y_difference_speed = bs.traf.gs[ac_idx] - np.sin(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
 
         # destination waypoint
-        destination_waypoint_distance = []
-        destination_waypoint_cos_drift = []
-        destination_waypoint_sin_drift = []
-        destination_waypoint_drift = []
-
-        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat, bs.traf.lon, self.destination_coordinates[:, 0], self.destination_coordinates[:, 1])
+        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.destination_coordinates[ac_idx, 0], self.destination_coordinates[ac_idx, 1])
     
-        destination_waypoint_distance.append(wpt_dis * RLtools.constants.NM2KM)
+        destination_waypoint_distance = wpt_dis * RLtools.constants.NM2KM
 
-        drift = bs.traf.hdg - wpt_qdr
-        for drift_idx in range(len(drift)):
-            drift[drift_idx] = RLtools.functions.bound_angle_positive_negative_180(drift[drift_idx])
+        drift = bs.traf.hdg[ac_idx] - wpt_qdr
+        destination_waypoint_drift = RLtools.functions.bound_angle_positive_negative_180(drift)
 
-        destination_waypoint_drift.append(drift)
-        destination_waypoint_cos_drift.append(np.cos(np.deg2rad(drift)))
-        destination_waypoint_sin_drift.append(np.sin(np.deg2rad(drift)))
+        destination_waypoint_cos_drift = np.cos(np.deg2rad(destination_waypoint_drift))
+        destination_waypoint_sin_drift = np.sin(np.deg2rad(destination_waypoint_drift))
 
         # obstacles 
         obstacle_centre_distance = []
@@ -136,13 +124,12 @@ class DeployRL(core.Entity):
 
         for obs_idx in range(RLtools.constants.NUM_OBSTACLES):
             # print(f'obs_idx: {obs_idx}')
-            obs_centre_qdr, obs_centre_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat, bs.traf.lon, self.obstacle_center_lat[obs_idx], self.obstacle_center_lon[obs_idx])
+            obs_centre_qdr, obs_centre_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.obstacle_center_lat[obs_idx], self.obstacle_center_lon[obs_idx])
             obs_centre_dis = obs_centre_dis * RLtools.constants.NM2KM #KM        
-
-            bearing = bs.traf.hdg - obs_centre_qdr
-            # bearing = fn.bound_angle_positive_negative_180(bearing)
-            for bearing_idx in range(len(bearing)):
-                bearing[bearing_idx] = RLtools.functions.bound_angle_positive_negative_180(bearing[bearing_idx])
+            # debug.red(f'obs_idx: {obs_idx}, obs_centre_dis: {obs_centre_dis}, obs_centre_qdr: {obs_centre_qdr}')
+            bearing = bs.traf.hdg[ac_idx] - obs_centre_qdr
+            
+            bearing = RLtools.functions.bound_angle_positive_negative_180(bearing)
 
             obstacle_centre_distance.append(obs_centre_dis)
             obstacle_centre_cos_bearing.append(np.cos(np.deg2rad(bearing)))
@@ -166,21 +153,20 @@ class DeployRL(core.Entity):
 
         return observation
 
-    def _set_action(self, action):
+    def _set_action(self, action, ac_idx):
         # """
         # Centralised control for multiple aircraft
         # """
-        print(f'New action')
-        for i in range(len(traf.id)):
-            action_index = i
-            dv = action[action_index*2+1] * RLtools.constants.D_SPEED
-            dh = action[action_index*2] * RLtools.constants.D_HEADING
+        # print(f'New action')
+        dv = action[1] * RLtools.constants.D_SPEED
+        dh = action[0] * RLtools.constants.D_HEADING
 
-            id = traf.id[i]
-            heading_new = RLtools.functions.bound_angle_positive_negative_180(traf.hdg[i] + dh)
-            speed_new = (traf.tas[i] + dv) * RLtools.constants.MpS2Kt
-            print(f'dv: {dv}, dh: {dh}')
-            print(f'Aircraft {id} - New heading: {heading_new}, New speed: {speed_new}')
-            # if not baseline_test:
-            stack.stack(f"HDG {id} {heading_new}")
-            stack.stack(f"SPD {id} {speed_new}")
+        id = traf.id[ac_idx]
+        heading_new = RLtools.functions.bound_angle_positive_negative_180(traf.hdg[ac_idx] + dh)
+        speed_new = (traf.tas[ac_idx] + dv) * RLtools.constants.MpS2Kt
+        print(f'Aircraft {id} - New heading: {heading_new}, New speed: {speed_new}')
+        # if not baseline_test:
+        stack.stack(f"HDG {id} {heading_new}")
+        stack.stack(f"SPD {id} {speed_new}")
+
+        print(f'Action for aircraft {id} - traf.hdg: {traf.hdg[ac_idx]} -> {heading_new} with dh {dh}, traf.tas: {traf.tas[ac_idx]} m/s -> {speed_new/RLtools.constants.MpS2Kt} with dv {dv} m/s')

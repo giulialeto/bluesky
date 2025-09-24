@@ -1,5 +1,5 @@
 '''
-Constants for the CentralisedStaticObstacleSectorCREnv-0 environment.
+Constants for the StaticObstacleCREnv-0 environment.
 '''
 
 import numpy as np
@@ -14,6 +14,8 @@ INTRUSION_DISTANCE = 5 # NM
 
 # Model parameters
 NUM_OBSTACLES = 10 #np.random.randint(1,5)
+NUM_INTRUDERS = 5
+
 D_HEADING = 45 #degrees
 D_SPEED = 20/3 # kts
 

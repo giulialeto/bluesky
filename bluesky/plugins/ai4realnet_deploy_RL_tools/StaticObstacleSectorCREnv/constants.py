@@ -1,5 +1,5 @@
 '''
-Constants for the CentralisedStaticObstacleSectorCREnv-0 environment.
+Constants for the StaticObstacleSectorCREnv-0 environment.
 '''
 
 import numpy as np
@@ -13,13 +13,16 @@ FL2M = 30.48
 INTRUSION_DISTANCE = 5 # NM
 
 # Model parameters
-NUM_OBSTACLES = 10 #np.random.randint(1,5)
+NUM_OBSTACLES = 5 #np.random.randint(1,5)
+NUM_INTRUDERS = 5
 D_HEADING = 45 #degrees
 D_SPEED = 20/3 # kts
 
 ACTION_FREQUENCY = 10
 
 CENTER = (52., 4.) # TU Delft AE Faculty coordinates
+
+TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
 
 WAYPOINT_DISTANCE_MAX = 400 # KM
 AC_SPD = 150 # kts

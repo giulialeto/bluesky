@@ -21,6 +21,8 @@ ACTION_FREQUENCY = 10
 
 CENTER = (52., 4.) # TU Delft AE Faculty coordinates
 
-WAYPOINT_DISTANCE_MAX = 400 # KM
+TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
+
+WAYPOINT_DISTANCE_MAX = 170 # KM
 AC_SPD = 150 # kts
 OBSTACLE_AREA_RANGE = (50, 1000) # In NM^2

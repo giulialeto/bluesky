@@ -98,7 +98,8 @@ ssd.obj
 
 # Custom files added by Giulia Leto
 scenario/command_tester.scn
-/bluesky/plugins/fazlur
-/src/larp
+bluesky/plugins/ai4realnet_deploy_RL_tools/models/
+bluesky/plugins/fazlur
+debug.py
 *.scn
 *.SCN
