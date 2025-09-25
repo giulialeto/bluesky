@@ -281,3 +281,13 @@ def resample_closed_border(latitudes, longitudes, n_points):
         out.append((lat_t, lon_t))
     out = np.array(out, dtype=np.float64)
     return out
+
+# from pyproj import Geod
+
+# WGS84 = Geod(ellps="WGS84")
+# NM2_IN_M2 = 1852.0**2  # 1 nm = 1852 m
+
+# def poly_area_nm2(lats, lons):
+#     # area_m2 is signed: positive for counter-clockwise, negative for clockwise
+#     area_m2, _ = WGS84.polygon_area_perimeter(lons, lats)
+#     return abs(area_m2) / NM2_IN_M2

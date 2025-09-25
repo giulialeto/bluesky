@@ -9,18 +9,11 @@ NM2KM = 1.852
 MpS2Kt = 1.94384
 FL2M = 30.48
 
-
-INTRUSION_DISTANCE = 5 # NM
-
 # Model parameters
 NUM_OBSTACLES = 10 #np.random.randint(1,5)
+AC_SPD = 150 # m/s
 D_HEADING = 45 #degrees
-D_SPEED = 20/3 # kts
+D_SPEED = 20/3 # m/s
+MACH_CRUISE = 0.8 # -
 
 ACTION_FREQUENCY = 10
-
-CENTER = (52., 4.) # TU Delft AE Faculty coordinates
-
-WAYPOINT_DISTANCE_MAX = 170 # KM
-AC_SPD = 150 # kts
-OBSTACLE_AREA_RANGE = (50, 1000) # In NM^2
