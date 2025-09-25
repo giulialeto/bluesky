@@ -103,3 +103,4 @@ bluesky/plugins/fazlur
 debug.py
 *.scn
 *.SCN
+*.DS_Store
