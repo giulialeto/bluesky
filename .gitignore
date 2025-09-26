@@ -96,11 +96,15 @@ ssd.obj
 *-checkpoint.ipynb
 .ropeproject/config.py
 
-# Custom files added by Giulia Leto
+# Custom files
 scenario/command_tester.scn
-bluesky/plugins/ai4realnet_deploy_RL_tools/models/
-bluesky/plugins/fazlur
 debug.py
 *.scn
 *.SCN
 *.DS_Store
+
+bluesky/plugins/fazlur
+# scripted automation plugin required library
+bluesky/plugins/ai4realnet_scripted_automation_src/larp/
+# rl deployment plugin models
+bluesky/plugins/ai4realnet_deploy_RL_tools/models/
