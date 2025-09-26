@@ -39,7 +39,7 @@ pip install stable-baselines3
 Run BlueSky using `python BlueSky.py`
 
 Choose which environment you would like to test. 
-Load one of the scenarios files called 'ai4realnet_deploy_RL.scn' contained in scenario/ai4realnet_deploy_RL/{env-name}/
+Load one of the scenarios files called `ai4realnet_deploy_RL.scn` contained in `scenario/ai4realnet_deploy_RL/{env-name}/`
 
 Testing scenario with real world data are available on AI4REALNET GitLab.
 
