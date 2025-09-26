@@ -170,6 +170,6 @@ class DeployRL(core.Entity):
         speed_new = (traf.cas[ac_idx] + dv) * RLtools.constants.MpS2Kt
         # stack.stack(f"ECHO Aircraft {id} - New heading: {heading_new} deg, New speed: {speed_new/RLtools.constants.MpS2Kt} m/s")
         stack.stack(f"HDG {id} {heading_new}")
-        stack.stack(f"SPD {id} {speed_new/RLtools.constants.MACH_CRUISE}")
+        stack.stack(f"SPD {id} {speed_new}")
 
         # print(f'Action for aircraft {id} - traf.hdg: {traf.hdg[ac_idx]} -> {heading_new} with dh {dh}, traf.cas: {traf.cas[ac_idx]} m/s -> {speed_new/RLtools.constants.MpS2Kt} with dv {dv} m/s')

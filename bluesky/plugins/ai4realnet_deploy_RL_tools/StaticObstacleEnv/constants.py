@@ -14,6 +14,5 @@ NUM_OBSTACLES = 10 #np.random.randint(1,5)
 AC_SPD = 150 # m/s
 D_HEADING = 45 #degrees
 D_SPEED = 20/3 # m/s
-MACH_CRUISE = 0.8 # -
 
 ACTION_FREQUENCY = 10
