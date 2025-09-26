@@ -8,6 +8,7 @@ from stable_baselines3 import SAC
 import numpy as np
 import bluesky.plugins.ai4realnet_deploy_RL_tools.CentralisedStaticObstacleSectorCREnv as RLtools
 import bluesky as bs
+import pandas as pd
 
 algorithm = 'SAC'
 env_name = 'CentralisedStaticObstacleSectorCREnv-v0'
@@ -27,6 +28,10 @@ class DeployRL(core.Entity):
     def __init__(self):
         super().__init__()
         self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{env_name}/{env_name}_{algorithm}/model", env=None)
+
+        # logging
+        self.log_buffer = []   # temporary storage
+        self.csv_file = (f"output/ai4realnet_deploy_RL_{env_name}_log.csv")
 
         # number of aircraft in the simulation is set by the training conditions
         # get number of aircraft in the simulation
@@ -94,6 +99,21 @@ class DeployRL(core.Entity):
         obs = self._get_obs()
         action, _ = self.model.predict(obs, deterministic=True)
         self._set_action(action)
+
+        # --- logging ---
+        simt = bs.sim.simt        # current sim time
+        for ac_id, hdg in zip(bs.traf.id, bs.traf.hdg):
+            self.log_buffer.append({
+                "simt": simt,
+                "id": ac_id,
+                "hdg": hdg,
+            })
+
+        # flush every 100 rows
+        if len(self.log_buffer) >= 5:
+            df = pd.DataFrame(self.log_buffer)
+            df.to_csv(self.csv_file, mode="a", index=False, header=not pd.io.common.file_exists(self.csv_file))
+            self.log_buffer.clear()
 
     def _get_obs(self):
         """
