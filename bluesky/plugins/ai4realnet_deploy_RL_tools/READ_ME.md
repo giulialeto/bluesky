@@ -46,7 +46,7 @@ Testing scenario with real world data are available on AI4REALNET GitLab.
 ## Project Structure
 
 Each supported BlueSky-Gym environment has its own dedicated plug-in. The main files of the plug-ins are:
-
+```
 bluesky/
 └── plugins/
     ├── ai4realnet_deploy_RL_centralised_static_obstacle.py
@@ -56,9 +56,10 @@ bluesky/
     ├── ai4realnet_deploy_RL_static_obstacle_sector_cr.py
     ├── ai4realnet_deploy_RL_static_obstacle_sector.py
     └── ai4realnet_deploy_RL_static_obstacle.py
-
+```
 
 Helper functions and models can be found in the following tree (both environment specific and common):
+```
 bluesky/
 └── plugins/
     └── ai4realnet_deploy_RL_tools/
@@ -72,8 +73,9 @@ bluesky/
         ├── StaticObstacleSectorEnv
         ├── functions.py
         └── READ_ME.md
-
+```
 The scenario files containing the data on which the models are tested can be found in the following:
+```
 scenario/
 └── ai4realnet_deploy_RL/
     ├── CentralisedStaticObstacleCREnv-v0/
@@ -84,12 +86,15 @@ scenario/
     ├── StaticObstacleSectorCREnv-v0/
     ├── StaticObstacleSectorEnv-v0/
     └── sector.scn
+```
 
 Each of the folders above contains:
+```
 └── {env-name}/
    ├── flights-sample.scn
    ├── restricted_areas-sample.scn
    └── ai4realnet_deploy_RL.scn
+```
 
 To run real world scenario, substitute the files 'flights-sample.scn' and 'restricted_areas-sample.scn' with files containing such data.
 
