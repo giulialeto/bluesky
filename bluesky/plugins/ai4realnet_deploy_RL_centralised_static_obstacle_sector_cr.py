@@ -154,8 +154,13 @@ class DeployRL(core.Entity):
         destination_waypoint_sin_drift = []
         destination_waypoint_drift = []
 
-        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat, bs.traf.lon, bs.traf.ap.route[:].wplat[-1], bs.traf.ap.route[:].wplon[-1])
-    
+        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(
+            bs.traf.lat,
+            bs.traf.lon,
+            np.array([r.wplat[-1] for r in bs.traf.ap.route]),
+            np.array([r.wplon[-1] for r in bs.traf.ap.route])
+        )
+
         destination_waypoint_distance.append(wpt_dis * RLtools.constants.NM2KM)
 
         drift = bs.traf.hdg - wpt_qdr
