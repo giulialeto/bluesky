@@ -39,12 +39,12 @@ class DeployRL(core.Entity):
 
         # get destination waypoint of all aircraft in the simulation
         destination_list = bs.traf.ap.dest
-        self.destination_coordinates = np.array([tuple(map(float, wpt.split(','))) for wpt in destination_list], dtype=np.float64)
+        destination_coordinates = np.array([tuple(map(float, wpt.split(','))) for wpt in destination_list], dtype=np.float64)
         
         waypoint_distances = []
         # Give aircraft initial heading
         for ac_idx_aircraft in range(n_ac):
-            initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_aircraft], traf.lon[ac_idx_aircraft], self.destination_coordinates[ac_idx_aircraft][0], self.destination_coordinates[ac_idx_aircraft][1])
+            initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_aircraft], traf.lon[ac_idx_aircraft], destination_coordinates[ac_idx_aircraft][0], destination_coordinates[ac_idx_aircraft][1])
             bs.traf.hdg[ac_idx_aircraft] = initial_wpt_qdr
             waypoint_distances.append(initial_wpt_dist)
 
@@ -85,6 +85,16 @@ class DeployRL(core.Entity):
         # controlling each aircraft separately
         for id in traf.id:
             ac_idx = traf.id2idx(id)
+            # import debug
+            # debug.pink(f'Processing aircraft {id}')
+            # debug.purple(f'Processing aircraft {traf.id[ac_idx]}')
+            # print(f'aircraft index for aircraft {id} is {ac_idx}')
+            # debug.black(f'len(traf.lat): {len(traf.lat)}, len(traf.lon): {len(traf.lon)}, len(traf.ap.route): {len(traf.ap.route)}')
+            _, dest_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
+            if dest_dis * RLtools.constants.NM2KM < RLtools.constants.DISTANCE_MARGIN:
+                stack.stack(f"DELETE {id}")
+                # debug.blue(f'skipping aircraft {id}')
+                continue  # skip action if the aircraft has reached its destination
             obs = self._get_obs(ac_idx)
             ''' debugging code used to save and compare the observation vector with the one in the training'''
             # import pickle
@@ -108,13 +118,17 @@ class DeployRL(core.Entity):
             df.to_csv(self.csv_file, mode="a", index=False, header=not pd.io.common.file_exists(self.csv_file))
             self.log_buffer.clear()
 
+        if traf.id == []:
+            # End the simulation if there are no aircraft left
+            stack.stack('QUIT')
+
     def _get_obs(self, ac_idx):
         """
         Observation is the normalized. Normalisation logic should be studied further
         """
 
         # destination waypoint
-        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.destination_coordinates[ac_idx, 0], self.destination_coordinates[ac_idx, 1])
+        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
     
         destination_waypoint_distance = wpt_dis * RLtools.constants.NM2KM
 
@@ -152,6 +166,13 @@ class DeployRL(core.Entity):
                 "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
             }
         
+        # import debug
+        # if len(traf.id) == 20:
+        #     debug.green(f'observation: {observation}')
+        # else: 
+        #     debug.yellow(f'observation: {observation}')
+
+        
         return observation
 
     def _set_action(self, action, ac_idx):
@@ -171,5 +192,7 @@ class DeployRL(core.Entity):
         # stack.stack(f"ECHO Aircraft {id} - New heading: {heading_new} deg, New speed: {speed_new/RLtools.constants.MpS2Kt} m/s")
         stack.stack(f"HDG {id} {heading_new}")
         stack.stack(f"SPD {id} {speed_new}")
+
+        # print(f'Action for aircraft {id}')
 
         # print(f'Action for aircraft {id} - traf.hdg: {traf.hdg[ac_idx]} -> {heading_new} with dh {dh}, traf.cas: {traf.cas[ac_idx]} m/s -> {speed_new/RLtools.constants.MpS2Kt} with dv {dv} m/s')

@@ -40,12 +40,12 @@ class DeployRL(core.Entity):
         # get destination waypoint of all aircraft in the simulation
         destination_list = bs.traf.ap.dest
 
-        self.destination_coordinates = np.array([tuple(map(float, wpt.split(','))) for wpt in destination_list], dtype=np.float64)
-
+        destination_coordinates = np.array([tuple(map(float, wpt.split(','))) for wpt in destination_list], dtype=np.float64)
+        # self.destination_coordinates = destination_coordinates
         waypoint_distances = []
         # Give aircraft initial heading
         for ac_idx_aircraft in range(n_ac):
-            initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_aircraft], traf.lon[ac_idx_aircraft], self.destination_coordinates[ac_idx_aircraft][0], self.destination_coordinates[ac_idx_aircraft][1])
+            initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_aircraft], traf.lon[ac_idx_aircraft], destination_coordinates[ac_idx_aircraft][0], destination_coordinates[ac_idx_aircraft][1])
             bs.traf.hdg[ac_idx_aircraft] = initial_wpt_qdr
             waypoint_distances.append(initial_wpt_dist)
 
@@ -111,8 +111,22 @@ class DeployRL(core.Entity):
         destination_waypoint_sin_drift = []
         destination_waypoint_drift = []
 
-        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat, bs.traf.lon, self.destination_coordinates[:, 0], self.destination_coordinates[:, 1])
-    
+        # import debug
+        # wpt_qdr_prev, wpt_dis_prev = bs.tools.geo.kwikqdrdist(bs.traf.lat, bs.traf.lon, self.destination_coordinates[:, 0], self.destination_coordinates[:, 1])
+
+
+        # wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat, bs.traf.lon, bs.traf.ap.route[:].wplat[-1], bs.traf.ap.route[:].wplon[-1])
+        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(
+            bs.traf.lat,
+            bs.traf.lon,
+            np.array([r.wplat[-1] for r in bs.traf.ap.route]),
+            np.array([r.wplon[-1] for r in bs.traf.ap.route])
+        )
+
+        # debug.orange(f'previous wpt_dis: {wpt_dis_prev}, current wpt_dis: {wpt_dis}')
+        # debug.orange(f'previous wpt_qdr: {wpt_qdr_prev}, current wpt_qdr: {wpt_qdr}')
+
+
         destination_waypoint_distance.append(wpt_dis * RLtools.constants.NM2KM)
 
         drift = bs.traf.hdg - wpt_qdr

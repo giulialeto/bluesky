@@ -18,3 +18,4 @@ D_SPEED = 20/3 # m/s
 ACTION_FREQUENCY = 10
 
 TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
+DISTANCE_MARGIN = 5 # km

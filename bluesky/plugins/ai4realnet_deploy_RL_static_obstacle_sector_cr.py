@@ -38,12 +38,12 @@ class DeployRL(core.Entity):
 
         # get destination waypoint of all aircraft in the simulation
         destination_list = bs.traf.ap.dest
-        self.destination_coordinates = np.array([tuple(map(float, wpt.split(','))) for wpt in destination_list], dtype=np.float64)
+        destination_coordinates = np.array([tuple(map(float, wpt.split(','))) for wpt in destination_list], dtype=np.float64)
 
         waypoint_distances = []
         # Give aircraft initial heading
         for ac_idx_aircraft in range(n_ac):
-            initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_aircraft], traf.lon[ac_idx_aircraft], self.destination_coordinates[ac_idx_aircraft][0], self.destination_coordinates[ac_idx_aircraft][1])
+            initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_aircraft], traf.lon[ac_idx_aircraft], destination_coordinates[ac_idx_aircraft][0], destination_coordinates[ac_idx_aircraft][1])
             bs.traf.hdg[ac_idx_aircraft] = initial_wpt_qdr
             waypoint_distances.append(initial_wpt_dist)
 
@@ -92,6 +92,10 @@ class DeployRL(core.Entity):
         # controlling each aircraft separately
         for id in traf.id:
             ac_idx = traf.id2idx(id)
+            _, dest_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
+            if dest_dis * RLtools.constants.NM2KM < RLtools.constants.DISTANCE_MARGIN:
+                stack.stack(f"DELETE {id}")
+                continue  # skip action if the aircraft has reached its destination
             obs = self._get_obs(ac_idx)
             action, _ = self.model.predict(obs, deterministic=True)
             self._set_action(action, ac_idx)
@@ -110,6 +114,11 @@ class DeployRL(core.Entity):
             df = pd.DataFrame(self.log_buffer)
             df.to_csv(self.csv_file, mode="a", index=False, header=not pd.io.common.file_exists(self.csv_file))
             self.log_buffer.clear()
+
+        if traf.id == []:
+            # End the simulation if there are no aircraft left
+            stack.stack('QUIT')
+
 
     def _get_obs(self, ac_idx):
         """
@@ -142,8 +151,17 @@ class DeployRL(core.Entity):
         intruder_x_difference_speed = - np.cos(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
         intruder_y_difference_speed = bs.traf.gs[ac_idx] - np.sin(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
 
+        # padding the observation if less than NUM_INTRUDERS are present
+        if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
+            num_missing_intruders = RLtools.constants.NUM_INTRUDERS - len(closest_intruders_idx)
+            intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(self.waypoint_distance_max,))
+            intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
+            intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
+            intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
+            intruder_y_difference_speed =  np.pad(intruder_y_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
+
         # destination waypoint
-        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.destination_coordinates[ac_idx, 0], self.destination_coordinates[ac_idx, 1])
+        wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
     
         destination_waypoint_distance = wpt_dis * RLtools.constants.NM2KM
 
