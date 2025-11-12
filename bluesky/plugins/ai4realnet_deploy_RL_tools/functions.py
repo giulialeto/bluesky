@@ -291,3 +291,162 @@ def resample_closed_border(latitudes, longitudes, n_points):
 #     # area_m2 is signed: positive for counter-clockwise, negative for clockwise
 #     area_m2, _ = WGS84.polygon_area_perimeter(lons, lats)
 #     return abs(area_m2) / NM2_IN_M2
+
+
+def interpolate_along_obstacle_vertices(vertex_1, vertex_2, n=15):
+    """Interpolate n points between vertex_1 and vertex_2."""
+    lats = np.linspace(vertex_1[0], vertex_2[0], n)
+    lons = np.linspace(vertex_1[1], vertex_2[1], n)
+    return list(zip(lats, lons))
+
+def generate_random_aircraft(n_ac, sector_name, obstacle_names, latitude_bounds, longitude_bounds):
+    """
+    Generate random scenario with random initial positions and random destinations for the aircraft
+    """
+    # HARDCODED
+    orig_altitude = 350
+    dest_altitude = 350
+
+    # if the aircraft is generated inside the sector, keep it, otherwise regenerate
+    min_lat, max_lat = latitude_bounds
+    min_lon, max_lon = longitude_bounds
+
+    lat_orig = np.full(n_ac, np.nan)
+    lon_orig = np.full(n_ac, np.nan)
+    good = np.zeros(n_ac, dtype=bool)
+
+    max_iter = 10_000  # safety guard
+    counter = 0
+
+
+
+
+    # import debug
+    # debug.pink(f'obstacle names {obstacle_names}')
+    # for shape_name, shape in bs.tools.areafilter.basic_shapes.items():
+    #     # print(f'Restricted area name: {shape_name}')
+    #     if shape_name != 'LISBON_FIR':
+    #         coordinates = shape.coordinates
+    #         print(f'latitudes: {coordinates[::2]}')
+    #         print(f'longitudes: {coordinates[1::2]}')
+    #         debug.orange(f'shape.name {shape_name}')
+
+
+
+
+
+    while np.isnan(lat_orig).any():
+        counter += 1
+        if counter > max_iter:
+            raise RuntimeError("ORIG Too many iterations - check bounds/sector overlap.")
+
+        # indices that still need valid points
+        # remaining_idx = np.isnan(lat_orig)
+        remaining_idx = np.flatnonzero(~good)
+        m = remaining_idx.size
+
+        # sample only for the remaining positions
+        lat_try = np.random.uniform(min_lat, max_lat, size=m)
+        lon_try = np.random.uniform(min_lon, max_lon, size=m)
+        altitude = np.ones(m)*orig_altitude
+
+        # # check if Lisbon FIR is already loaded
+        # if bs.tools.areafilter.basic_shapes['LISBON_FIR'] is None:
+        #     print('lisbon fir not loaded)')
+        # else:
+        #     print(f'{bs.tools.areafilter.basic_shapes['LISBON_FIR']}')
+
+        inside_sector = bs.tools.areafilter.checkInside(
+            sector_name,
+            lat_try,
+            lon_try,
+            altitude
+        ).astype(bool)
+
+        # debug.cyan(f'inside_sector: {inside_sector}')
+        inside_any_restricted = np.zeros_like(inside_sector, dtype=bool)
+        # debug.cyan(f'inside_any_restricted: {inside_any_restricted}')
+
+        for name in obstacle_names:
+            # print(f'name: {name}')
+
+            inside_restricted_area = bs.tools.areafilter.checkInside(
+                name,
+                lat_try,
+                lon_try,
+                altitude
+            ).astype(bool)
+            # debug.cyan(f'inside_restricted: {inside_restricted_area}')
+            inside_any_restricted |= inside_restricted_area
+            # debug.cyan(f'inside_any_restricted: {inside_any_restricted}')
+
+
+        inside = inside_sector & (~inside_any_restricted)
+        # debug.cyan(f'inside: {inside}')
+
+        # place successful samples into their slots
+        lat_orig[remaining_idx[inside]] = lat_try[inside]
+        lon_orig[remaining_idx[inside]] = lon_try[inside]
+        good[remaining_idx[inside]] = True
+
+    lat_dest = np.full(n_ac, np.nan)
+    lon_dest = np.full(n_ac, np.nan)
+    good = np.zeros(n_ac, dtype=bool)
+
+    max_iter = 10_000  # safety guard
+    counter = 0
+
+    while np.isnan(lat_dest).any():
+        counter += 1
+        if counter > max_iter:
+            raise RuntimeError("DEST Too many iterations — check bounds/sector overlap.")
+
+        # indices that still need valid points
+        # remaining_idx = np.isnan(lat_dest)
+        remaining_idx = np.flatnonzero(~good)
+        m = remaining_idx.size
+
+        # sample only for the remaining positions
+        lat_try = np.random.uniform(min_lat, max_lat, size=m)
+        lon_try = np.random.uniform(min_lon, max_lon, size=m)
+        altitude = np.ones(m)*dest_altitude
+
+        inside_sector = bs.tools.areafilter.checkInside(
+            sector_name,
+            lat_try,
+            lon_try,
+            altitude
+        ).astype(bool)
+        # debug.red(f'inside_sector: {inside_sector}')
+
+        inside_any_restricted = np.zeros_like(inside_sector, dtype=bool)
+        # debug.red(f'inside_any_restricted: {inside_any_restricted}')
+
+        for name in obstacle_names:
+            # print(f'name: {name}')
+            inside_restricted_area = bs.tools.areafilter.checkInside(
+                name,
+                lat_try,
+                lon_try,
+                altitude
+            ).astype(bool)
+            # debug.red(f'inside_restricted_area: {inside_restricted_area}, lat_try: {lat_try}, lon_try: {lon_try}, altitude: {altitude} ')
+            inside_any_restricted |= inside_restricted_area
+            # debug.red(f'inside_any_restricted: {inside_any_restricted}')
+
+        inside = inside_sector & (~inside_any_restricted)
+        # debug.red(f'inside: {inside}')
+
+        # place successful samples into their slots
+        lat_dest[remaining_idx[inside]] = lat_try[inside]
+        lon_dest[remaining_idx[inside]] = lon_try[inside]
+        good[remaining_idx[inside]] = True
+        # print(f'lat_dest: {lat_dest}')
+        # print(f'lon_dest: {lon_dest}')
+    heading, _ = bs.tools.geo.kwikqdrdist(lat_orig, lon_orig, lat_dest, lon_dest)
+
+    for ac_idx in range(n_ac):
+        bs.stack.process(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, 150')
+        bs.stack.process(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
+        # bs.stack.stack(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, 150')
+        # bs.stack.stack(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
