@@ -318,23 +318,6 @@ def generate_random_aircraft(n_ac, sector_name, obstacle_names, latitude_bounds,
     max_iter = 10_000  # safety guard
     counter = 0
 
-
-
-
-    # import debug
-    # debug.pink(f'obstacle names {obstacle_names}')
-    # for shape_name, shape in bs.tools.areafilter.basic_shapes.items():
-    #     # print(f'Restricted area name: {shape_name}')
-    #     if shape_name != 'LISBON_FIR':
-    #         coordinates = shape.coordinates
-    #         print(f'latitudes: {coordinates[::2]}')
-    #         print(f'longitudes: {coordinates[1::2]}')
-    #         debug.orange(f'shape.name {shape_name}')
-
-
-
-
-
     while np.isnan(lat_orig).any():
         counter += 1
         if counter > max_iter:
@@ -349,12 +332,6 @@ def generate_random_aircraft(n_ac, sector_name, obstacle_names, latitude_bounds,
         lat_try = np.random.uniform(min_lat, max_lat, size=m)
         lon_try = np.random.uniform(min_lon, max_lon, size=m)
         altitude = np.ones(m)*orig_altitude
-
-        # # check if Lisbon FIR is already loaded
-        # if bs.tools.areafilter.basic_shapes['LISBON_FIR'] is None:
-        #     print('lisbon fir not loaded)')
-        # else:
-        #     print(f'{bs.tools.areafilter.basic_shapes['LISBON_FIR']}')
 
         inside_sector = bs.tools.areafilter.checkInside(
             sector_name,

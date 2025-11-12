@@ -255,21 +255,25 @@ class DeployRL(core.Entity):
             sector_points_cos_drift.append(np.cos(np.deg2rad(drift)))
             sector_points_sin_drift.append(np.sin(np.deg2rad(drift)))
         
+        obstacle_radius = self.obstacle_radius
         ## Find the RLtools.constants.NUM_OBSTACLES closest obstacles to the ownship (restricted areas or weather cells)
         if self.weather_active:
             obstacle_centre_distance.append(weather_cell_centre_distance)
             obstacle_centre_cos_bearing.append(weather_cell_centre_cos_bearing)
             obstacle_centre_sin_bearing.append(weather_cell_centre_sin_bearing)
+            obstacle_radius.append(self.weather_cell_radius)
 
             obstacle_centre_distance = np.array(obstacle_centre_distance)
             obstacle_centre_cos_bearing = np.array(obstacle_centre_cos_bearing)
             obstacle_centre_sin_bearing = np.array(obstacle_centre_sin_bearing)
+            obstacle_radius = np.array(obstacle_radius)
 
             idx_sorted = np.argsort(obstacle_centre_distance)[:RLtools.constants.NUM_OBSTACLES]
 
             obstacle_centre_distance = obstacle_centre_distance[idx_sorted]
             obstacle_centre_cos_bearing = obstacle_centre_cos_bearing[idx_sorted]
             obstacle_centre_sin_bearing = obstacle_centre_sin_bearing[idx_sorted]
+            obstacle_radius = obstacle_radius[idx_sorted]
 
         observation = {
                 "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
@@ -281,7 +285,7 @@ class DeployRL(core.Entity):
                 "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                 "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                 # observations on obstacles
-                "restricted_area_radius": np.array(self.obstacle_radius).reshape(-1)/self.max_obstacle_radius,
+                "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
                 "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
                 "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                 "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
@@ -391,18 +395,24 @@ class DeployRL(core.Entity):
 
                 weather_cell_latitude_centre, weather_cell_longitude_centre = self.weather_cell_center_lat, self.weather_cell_center_lon
                 weather_cell_poly = []
+                weather_cell_radius = []
                 for ang_deg, jit in zip(self.weather_angles_deg, self.weather_shape_jitter):
                     radius_jittered_km = radius_nm * float(jit) * NM2KM
+                    weather_cell_radius.append(radius_jittered_km)
                     vertex_lat, vertex_lon = RLtools.functions.get_point_at_distance(weather_cell_latitude_centre, weather_cell_longitude_centre, radius_jittered_km, ang_deg)
                     weather_cell_poly.append((vertex_lat, vertex_lon))
                 # close polygon
                 weather_cell_poly.append(weather_cell_poly[0])
+
+                self.weather_cell_radius = max(weather_cell_radius)
 
                 # Re-draw polygon (delete + poly keeps syntax simple)
                 stack.process(f"DELETE {shape_name}")
                 flat = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in weather_cell_poly])
                 stack.process(f"POLY {shape_name}, {flat}")
                 stack.process(f"COLOR {shape_name}, BLUE")
+                # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/RLtools.constants.NM2KM}")
+                # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
         else: # No active cell: sample a new one with probability pweather
 
@@ -434,13 +444,16 @@ class DeployRL(core.Entity):
 
                 # Draw initial polygon
                 weather_cell_poly = []
+                weather_cell_radius = []
+
                 for ang_deg, jit in zip(self.weather_angles_deg, self.weather_shape_jitter):
                     radius_jittered_km = seed_radius_nm * float(jit) * NM2KM
+                    weather_cell_radius.append(radius_jittered_km)
                     vertex_lat, vertex_lon = RLtools.functions.get_point_at_distance(weather_cell_latitude_centre, weather_cell_longitude_centre, radius_jittered_km, ang_deg)
                     weather_cell_poly.append((vertex_lat, vertex_lon))
                 # close polygon
                 weather_cell_poly.append(weather_cell_poly[0])
-
+                
                 flattened_polygon = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in weather_cell_poly])
                 stack.process(f"POLY {shape_name}, {flattened_polygon}")
                 stack.process(f"COLOR {shape_name}, BLUE")
@@ -451,6 +464,9 @@ class DeployRL(core.Entity):
                 self.weather_cell_center_lon = float(weather_cell_longitude_centre)
                 self.weather_disturbance_start = float(simt)
                 self.weather_cell_lifetime = float(weather_cell_lifetime)
+                self.weather_cell_radius = max(weather_cell_radius)
+                # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/RLtools.constants.NM2KM}")
+                # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
     def _generate_random_restricted_areas(self, NUM_OBSTACLES):
         altitude = 350
