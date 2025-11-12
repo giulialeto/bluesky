@@ -16,7 +16,7 @@ import debug
 algorithm = 'SAC'
 env_name = 'StaticObstacleSectorCREnv-v0'
 
-N_AC = 20  # Number of aircraft in the randomised scenario
+# N_AC = 20  # Number of aircraft in the randomised scenario
 N_SCN = 10 # Number of testing iterations
 
 sector_name = 'LISBON_FIR'
@@ -59,7 +59,7 @@ class DeployRL(core.Entity):
 
 
         # stack.process('pcall ai4realnet_deploy_RL/sector.scn;initialize_scenario;DTMULT 5000')
-        stack.stack('initialize_scenario 20 5')
+        stack.stack('initialize_scenario 20 3')
 
         stack.stack(f'SAVEIC test_{self.scn_idx}')
         debug.light_blue(f'called save ic for {self.scn_idx}')
@@ -80,8 +80,8 @@ class DeployRL(core.Entity):
                 stack.process(f"DELETE {id}")
                 continue  # skip action if the aircraft has reached its destination
             obs = self._get_obs(ac_idx)
-            # action, _ = self.model.predict(obs, deterministic=True)
-            # self._set_action(action, ac_idx)
+            action, _ = self.model.predict(obs, deterministic=True)
+            self._set_action(action, ac_idx)
 
         # --- logging ---
         simt = bs.sim.simt        # current sim time
@@ -140,8 +140,10 @@ class DeployRL(core.Entity):
             self.obstacle_centre_lat = []
             self.obstacle_centre_lon = []
             self.obstacle_radius = []
+            self.number_obstacles = 0
             for shape_name, shape in tools.areafilter.basic_shapes.items():
-                if shape_name != 'LISBON_FIR' and shape_name != 'WEATHER_CELL' :
+                if shape_name != 'LISBON_FIR' and shape_name != 'WEATHER_CELL':
+                    self.number_obstacles += 1
                     print(f'Processing obstacle: {shape_name}')
                     coordinates = shape.coordinates
                     coordinates = list(zip(coordinates[::2], coordinates[1::2]))
@@ -209,7 +211,7 @@ class DeployRL(core.Entity):
         obstacle_centre_cos_bearing = []
         obstacle_centre_sin_bearing = []
 
-        for obs_idx in range(RLtools.constants.NUM_OBSTACLES):
+        for obs_idx in range(self.number_obstacles):
             
             obs_centre_qdr, obs_centre_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.obstacle_centre_lat[obs_idx], self.obstacle_centre_lon[obs_idx])
             obs_centre_dis = obs_centre_dis * RLtools.constants.NM2KM #KM        
@@ -254,24 +256,32 @@ class DeployRL(core.Entity):
         obstacle_radius = self.obstacle_radius
 
         ## Find the RLtools.constants.NUM_OBSTACLES closest obstacles to the ownship (restricted areas or weather cells)
+        # RLtools.constants.NUM_OBSTACLES depends on how many obstacles the AI has been trained with
         if bs.tools.areafilter.basic_shapes.get('WEATHER_CELL') is not None:
             obstacle_centre_distance.append(weather_cell_centre_distance)
             obstacle_centre_cos_bearing.append(weather_cell_centre_cos_bearing)
             obstacle_centre_sin_bearing.append(weather_cell_centre_sin_bearing)
             obstacle_radius.append(weather_cell_radius)
+        
+        obstacle_centre_distance = np.array(obstacle_centre_distance)
+        obstacle_centre_cos_bearing = np.array(obstacle_centre_cos_bearing)
+        obstacle_centre_sin_bearing = np.array(obstacle_centre_sin_bearing)
+        obstacle_radius = np.array(obstacle_radius)
+        
+        idx_sorted = np.argsort(obstacle_centre_distance)[:RLtools.constants.NUM_OBSTACLES]
 
-            obstacle_centre_distance = np.array(obstacle_centre_distance)
-            obstacle_centre_cos_bearing = np.array(obstacle_centre_cos_bearing)
-            obstacle_centre_sin_bearing = np.array(obstacle_centre_sin_bearing)
-            obstacle_radius = np.array(obstacle_radius)
-            
-            idx_sorted = np.argsort(obstacle_centre_distance)[:RLtools.constants.NUM_OBSTACLES]
+        obstacle_centre_distance = obstacle_centre_distance[idx_sorted]
+        obstacle_centre_cos_bearing = obstacle_centre_cos_bearing[idx_sorted]
+        obstacle_centre_sin_bearing = obstacle_centre_sin_bearing[idx_sorted]
+        obstacle_radius = obstacle_radius[idx_sorted]
 
-            obstacle_centre_distance = obstacle_centre_distance[idx_sorted]
-            obstacle_centre_cos_bearing = obstacle_centre_cos_bearing[idx_sorted]
-            obstacle_centre_sin_bearing = obstacle_centre_sin_bearing[idx_sorted]
-            obstacle_radius = obstacle_radius[idx_sorted]
-
+        num_missing = RLtools.constants.NUM_OBSTACLES - obstacle_centre_distance.size
+        if num_missing > 0:
+            obstacle_centre_distance = np.pad(obstacle_centre_distance, (0, num_missing), 'constant', constant_values=0.0)
+            obstacle_centre_cos_bearing = np.pad(obstacle_centre_cos_bearing, (0, num_missing), 'constant', constant_values=0.0)
+            obstacle_centre_sin_bearing = np.pad(obstacle_centre_sin_bearing, (0, num_missing), 'constant', constant_values=0.0)
+            obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=0.0)
+        
         observation = {
                 "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
                 "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
