@@ -1,11 +1,13 @@
 #-------------------------------------------------------------------------------
-#   AI4REALNET D1.3 BlueSky scenario for testing the RL models on realistic data
+#   AI4REALNET D1.4 BlueSky scenario for testing the RL models on realistic data
 #   Env: StaticObstacleSectorCREnv-v0
 #   Authors: Giulia Leto
 #-------------------------------------------------------------------------------
-#   Load the "DEPLOY_RL_StaticObstacleSectorCREnv" plugin
+#   Load the "DEPLOY_RL_StaticObstacleSectorCREnv_randomised_scenario" plugin
 #   - select which model to run
+#   - randomly generates 
 #   - reads the simulation state 
 #   - trained RL model issues speed/heading changes to aircraft
+#   - insert weather perturbations
 #-------------------------------------------------------------------------------
 00:00:00.00>PLUGIN DEPLOY_RL_StaticObstacleSectorCREnv_randomised_scenario
