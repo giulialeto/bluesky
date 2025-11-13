@@ -12,8 +12,9 @@ from bluesky.plugins.ai4realnet_deploy_RL_tools import functions, constants_gene
 
 import debug
 
+# Global data
 N_AC = 20  # Number of aircraft in the randomised scenario
-NUM_OBSTACLES = 5 
+N_OBSTACLES = 5 
 
 sector_name = 'LISBON_FIR'
 latitude_bounds = (31.4, 43.0)
@@ -23,16 +24,30 @@ longitude_bounds = (-18.3, -6.1)
 latitude_bounds = (33.0, 36.0)
 longitude_bounds = (-18.0, -12.0)
 
+scenario_generator = None
+
 def init_plugin():
+    global scenario_generator
     scenario_generator = ScenarioGenerator()
+
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'scn_gen', #'Deploy_RL', #
+        'plugin_name':     'scn_gen',
         # The type of this plugin.
         'plugin_type':     'sim',
         }
-    return config
+    
+    stackfunctions = {
+        'INITIALIZE_SCENARIO': [
+            'INITIALIZE_SCENARIO [N_AC] [N_OBSTACLES]',
+            '[int] [int]',
+            scenario_generator.initialize_scenario,
+            'Generates a random scenario inside of Lisbon FIR',
+        ]
+    }
+
+    return config, stackfunctions
 
 class ScenarioGenerator(core.Entity):  
     def __init__(self):
@@ -52,9 +67,19 @@ class ScenarioGenerator(core.Entity):
         # stack.stack('initialize_scenario 20 5')
         # self.initialise_observation_flag = True
 
-    @stack.command
-    def initialize_scenario(self, number_aircraft: int = N_AC, number_obstacles: int = NUM_OBSTACLES):
-        # bs.sim.step()
+    @stack.command(name ='INITIALIZE_SCENARIO', annotations= '', aliases=('INIT_SCENARIO', 'INITIALISE_SCENARIO'))
+    def initialize_scenario(self, number_aircraft: int = N_AC, number_obstacles: int = N_OBSTACLES):
+        """
+        Initialize a new random scenario with the specified number of aircraft and obstacles.
+
+        Args:
+            number_aircraft (int): Number of aircraft to generate in the scenario.
+            number_obstacles (int): Number of random restricted areas to create.
+
+        Example:
+            INITIALIZE_SCENARIO 20 5
+        """
+            # bs.sim.step()
         stack.process('pcall ai4realnet_deploy_RL/sector.scn')
         stack.process('pcall ai4realnet_deploy_RL/config_screen')
 
@@ -223,7 +248,7 @@ class ScenarioGenerator(core.Entity):
                 # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/constants_general.NM2KM}")
                 # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
-    def _generate_random_restricted_areas(self, num_obstacles: int = NUM_OBSTACLES):
+    def _generate_random_restricted_areas(self, num_obstacles: int):
         altitude = 350
 
         # delete existing obstacles from previous episode in BlueSky ##DELETE after reset is functioning. 
@@ -246,7 +271,7 @@ class ScenarioGenerator(core.Entity):
         self.obstacle_vertices = []
         self.obstacle_radius = []
 
-        self._generate_coordinates_centre_obstacles(num_obstacles = num_obstacles)
+        self._generate_coordinates_centre_obstacles(num_obstacles)
 
         obstacle_dict = {}  # Initialize the dictionary to store obstacles for overlap checking
 
@@ -374,7 +399,7 @@ class ScenarioGenerator(core.Entity):
         
         return p_area, p, R
 
-    def _generate_coordinates_centre_obstacles(self, num_obstacles = NUM_OBSTACLES):
+    def _generate_coordinates_centre_obstacles(self, num_obstacles: int):
         self.obstacle_centre_lat = []
         self.obstacle_centre_lon = []
         OBSTACLE_DISTANCE_MIN = 20 # KM
