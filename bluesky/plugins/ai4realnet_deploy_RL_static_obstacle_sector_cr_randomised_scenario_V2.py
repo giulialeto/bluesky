@@ -28,7 +28,7 @@ latitude_bounds = (33.0, 36.0)
 longitude_bounds = (-18.0, -12.0)
 
 def init_plugin():
-    StaticObstacleSectorCR_randomised_scenario_loading = DeployRL()
+    deploy_RL = DeployRL()
     # Configuration parameters
     config = {
         # The name of your plugin
@@ -36,20 +36,25 @@ def init_plugin():
         # The type of this plugin.
         'plugin_type':     'sim',
         }
-    return config
+    stackfunctions = {
+        'DEPLOY_RL': [
+            'DEPLOY_RL [ENV_NAME] [ALGORITHM] [N_AC] [N_OBSTACLES]',
+            '[txt] [txt] [int] [int]',
+            deploy_RL.initialize_RL,
+            'Initialises the RL deployment plugin with the specified environment and algorithm',
+        ]}
+    return config, stackfunctions
 
 class DeployRL(core.Entity):  
     def __init__(self):
         super().__init__()
-        self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{env_name}/{env_name}_{algorithm}/model", env=None)
         self.scn_idx = 0
-        
-        # logging
-        self.log_buffer = []   # temporary storage
-        self.csv_file = (f"output/ai4realnet_deploy_RL_{env_name}_log.csv")
+
+
         import debug
         debug.light_blue(f'initialised deploy RL at {self.scn_idx}')
-        self.initialise_observation_flag = False
+        self.first_initialization = True
+
     def reset(self):
         import debug
         debug.light_green(f'reset deploy RL at {self.scn_idx}')
@@ -59,16 +64,44 @@ class DeployRL(core.Entity):
 
 
         # stack.process('pcall ai4realnet_deploy_RL/sector.scn;initialize_scenario;DTMULT 5000')
-        stack.stack('initialize_scenario 20 3')
-        stack.stack('perturbation weather on')
-        stack.stack('perturbation volcanic on')
+
+
+    def initialize_RL(self, env_name: str, algorithm: str, number_aircraft: int, number_obstacles: int):
+        """
+        Initialize a new random scenario with the specified number of aircraft and obstacles.
+
+        Args:
+            number_aircraft (int): Number of aircraft to generate in the scenario.
+            number_obstacles (int): Number of random restricted areas to create.
+
+        Example:
+            INITIALIZE_SCENARIO 20 5
+        """
+        if self.first_initialization:
+            self.env_name = env_name
+            self.algorithm = algorithm
+            self.number_obstacles = number_obstacles
+            self.number_aircraft = number_aircraft
+            self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{env_name}/{env_name}_{algorithm}/model", env=None)
+            
+            # logging
+            self.log_buffer = []   # temporary storage
+            self.csv_file = (f"output/ai4realnet_deploy_RL_{env_name}_log.csv")
+            self.first_initialization = False
+        
+        stack.stack(f'initialize_scenario {number_aircraft} {number_obstacles}')
+        stack.stack(f'perturbation weather on')
+        stack.stack(f'perturbation volcanic on')
         stack.stack(f'SAVEIC test_{self.scn_idx}')
+        stack.stack(f'DTMULT 5000')
         debug.light_blue(f'called save ic for {self.scn_idx}')
         self.initialise_observation_flag = True
 
+
     @core.timed_function(name='StaticObstacleSectorCR', dt=RLtools.constants.ACTION_FREQUENCY)
     def update(self):
-
+        if self.first_initialization:
+            return
         # if self.initialise_observation_flag:
         #     for shape_name, _ in tools.areafilter.basic_shapes.items():
         #         print(f'Existing obstacle at first update after reset: {shape_name}')
@@ -81,8 +114,8 @@ class DeployRL(core.Entity):
                 stack.process(f"DELETE {id}")
                 continue  # skip action if the aircraft has reached its destination
             obs = self._get_obs(ac_idx)
-            action, _ = self.model.predict(obs, deterministic=True)
-            self._set_action(action, ac_idx)
+            # action, _ = self.model.predict(obs, deterministic=True)
+            # self._set_action(action, ac_idx)
 
         # --- logging ---
         simt = bs.sim.simt        # current sim time
@@ -101,13 +134,14 @@ class DeployRL(core.Entity):
 
         if traf.id == [] and (self.scn_idx < N_SCN+1):
             self.scn_idx += 1
-            # for some reason, the weather cell on the screen is not deleted when reset is issued 
-            stack.stack(f"DELETE WEATHER_CELL")
-            stack.stack(f"DELETE VOLCANIC_CELL")
+            # for some reason, the weather and volcanic cell on the screen is not deleted when reset is issued 
+            stack.process(f"DELETE WEATHER_CELL")
+            stack.process(f"DELETE VOLCANIC_CELL")
             # bs.tools.areafilter.deleteArea('WEATHER_CELL')
-            bs.sim.step()
-            stack.stack('RESET')
+            # bs.sim.step()
+            stack.process('RESET')
             # stack.process('RESET')
+            stack.process(f'deploy_RL {self.env_name} {self.algorithm} {self.number_aircraft} {self.number_obstacles}')
 
         if traf.id == [] and (self.scn_idx == N_SCN+1):
             stack.process('QUIT')

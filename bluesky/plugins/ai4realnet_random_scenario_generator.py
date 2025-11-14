@@ -52,21 +52,21 @@ def init_plugin():
 class ScenarioGenerator(core.Entity):  
     def __init__(self):
         super().__init__()
-        self.scn_idx = 0
         
         # logging
-        import debug
-        debug.light_blue(f'initialised SCN_GEN at {self.scn_idx}')
+        # import debug
+        # debug.light_blue(f'initialised SCN_GEN at {self.scn_idx}')
         self.initialise_observation_flag = False
     
     def reset(self):
-        import debug
-        debug.light_green(f'reset SCN_GEN at {self.scn_idx}')
+        # import debug
+        # debug.light_green(f'reset SCN_GEN at {self.scn_idx}')
         
         # stack.process('pcall ai4realnet_deploy_RL/sector.scn;initialize_scenario;DTMULT 5000')
         # stack.stack('initialize_scenario 20 5')
         # self.initialise_observation_flag = True
-
+        pass
+    
     # @stack.command(name ='INITIALIZE_SCENARIO', annotations= '', aliases=('INIT_SCENARIO', 'INITIALISE_SCENARIO'))
     def initialize_scenario(self, number_aircraft: int = N_AC, number_obstacles: int = N_OBSTACLES):
         """
