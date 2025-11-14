@@ -67,7 +67,7 @@ class ScenarioGenerator(core.Entity):
         # stack.stack('initialize_scenario 20 5')
         # self.initialise_observation_flag = True
 
-    @stack.command(name ='INITIALIZE_SCENARIO', annotations= '', aliases=('INIT_SCENARIO', 'INITIALISE_SCENARIO'))
+    # @stack.command(name ='INITIALIZE_SCENARIO', annotations= '', aliases=('INIT_SCENARIO', 'INITIALISE_SCENARIO'))
     def initialize_scenario(self, number_aircraft: int = N_AC, number_obstacles: int = N_OBSTACLES):
         """
         Initialize a new random scenario with the specified number of aircraft and obstacles.
@@ -87,8 +87,6 @@ class ScenarioGenerator(core.Entity):
         if bs.tools.areafilter.basic_shapes.get(sector_name) is None:
             raise Exception(f"{sector_name} not loaded")
 
-        self.weather_active = False
-
         self.sample_obstacle = True
         while self.sample_obstacle:
             self._generate_random_restricted_areas(number_obstacles)
@@ -97,156 +95,6 @@ class ScenarioGenerator(core.Entity):
 
         # bs.sim.step()
 
-    @core.timed_function(name='weather_disturbance', dt=constants_general.ACTION_FREQUENCY)
-    def generate_weather_disturbance(self):
-        """
-        Implements ATM 1: Weather perturbations as adverse, drifting storm cells.
-
-        Spawning:
-            - With probability pweather (each call), spawn a new disturbance if none is active.
-            - Lifetime is sampled from an exponential distribution with mean qweather (Poisson).
-
-        Evolution:
-            - Radius follows a triangular profile: base -> peak -> base over lifetime.
-            - Center drifts with constant (sampled) heading/speed.
-            - Shape is a polygon with per-vertex jitter (stable over the cell lifetime).
-
-        Deletion:
-            - When simt >= start + lifetime, the cell is removed.
-        """
-        # --- Short names to constants (adjust names to your actual constants) ---
-        pweather = 0.03                      # spawn probability per tick
-        qweather = 1200               # mean lifetime [s] for exponential
-        min_r_nm = 6          # small seed radius
-        peak_r_nm = 28        # peak radius
-       
-        # jitter   = 0.15 # per-vertex shape jitter factor, 15%
-        vmin, vmax = (5.0, 100.0)  # speed range [kt]
-        NM2KM = constants_general.NM2KM
-        weather_cell_lifetime_min = 600  # minimum lifetime [s]
-        shape_name = 'WEATHER_CELL'
-        simt = bs.sim.simt
-        # dt   = (simt - getattr(self, "weather_last_update_t", simt))
-        # self.weather_last_update_t = simt
-        dt=constants_general.ACTION_FREQUENCY
-
-        # States
-        if not hasattr(self, "weather_active"):
-            self.weather_active = False
-            self.weather_shape_jitter = None  # per-vertex scale factors (stable)
-            self.weather_angles_deg = None
-
-        if self.weather_active:
-
-            if (simt - self.weather_disturbance_start) >= self.weather_cell_lifetime:
-                # Delete weather disturbance (expired)
-                stack.process(f"DELETE {shape_name}")
-                self.weather_active = False
-                self.weather_shape_jitter = None
-                self.weather_angles_deg = None
-            else:
-                # Evolve the active disturbance
-                age_s   = simt - self.weather_disturbance_start
-                tau     = age_s / max(1e-6, self.weather_cell_lifetime) # [0,1] progress through lifetime
-                # Triangular growth-shrink radius profile
-                if tau <= 0.5:
-                    radius_nm = min_r_nm + 2.0 * tau * (peak_r_nm - min_r_nm)
-                else:
-                    radius_nm = peak_r_nm - 2.0 * (tau - 0.5) * (peak_r_nm - min_r_nm)
-
-                # Drift center since last update
-                if self.weather_cell_speed > 0.0:
-                    # distance in NM = speed[kt]*dt[h]
-                    distance_km = self.weather_cell_speed * (dt / 3600.0) * NM2KM
-                    new_lat, new_lon = functions.get_point_at_distance(self.weather_cell_center_lat, self.weather_cell_center_lon, distance_km, self.weather_cell_heading)
-                    self.weather_cell_center_lat = new_lat
-                    self.weather_cell_center_lon = new_lon
-
-                
-                # Build polygon with stable jitter
-                if self.weather_shape_jitter is None:
-                    # Stable per-vertex jitter and angles for the lifetime of the cell
-                    jitter = 0.25
-                    self.weather_angles_deg = np.linspace(0.0, 360.0, num=self.n_verts, endpoint=False)
-                    self.weather_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.n_verts)
-                    import debug
-                    debug.pink(f'Is this ever triggered?')
-                else:
-                    jitter = 0.05
-                    self.weather_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.n_verts)
-
-                weather_cell_latitude_centre, weather_cell_longitude_centre = self.weather_cell_center_lat, self.weather_cell_center_lon
-                weather_cell_poly = []
-                weather_cell_radius = []
-                for ang_deg, jit in zip(self.weather_angles_deg, self.weather_shape_jitter):
-                    radius_jittered_km = radius_nm * float(jit) * NM2KM
-                    weather_cell_radius.append(radius_jittered_km)
-                    vertex_lat, vertex_lon = functions.get_point_at_distance(weather_cell_latitude_centre, weather_cell_longitude_centre, radius_jittered_km, ang_deg)
-                    weather_cell_poly.append((vertex_lat, vertex_lon))
-                # close polygon
-                weather_cell_poly.append(weather_cell_poly[0])
-                self.weather_cell_radius = max(weather_cell_radius)
-
-                # Re-draw polygon (delete + poly keeps syntax simple)
-                stack.process(f"DELETE {shape_name}")
-                flat = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in weather_cell_poly])
-                stack.process(f"POLY {shape_name}, {flat}")
-                stack.process(f"COLOR {shape_name}, BLUE")
-                # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/constants_general.NM2KM}")
-                # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
-
-        else: # No active cell: sample a new one with probability pweather
-
-            # If there is no weather distrubance active, sample with probality pweather
-            weather_disturbance_flag = (np.random.rand() < pweather) and (not self.weather_active)
-
-            if weather_disturbance_flag:
-                self.n_verts  = np.random.randint(10, 16)            # polygon vertex count
-                # Sample lifetime ~ Exponential(mean=qweather)
-                # (Poisson process waiting time)
-                weather_cell_lifetime = float(np.random.exponential(scale=max(qweather, 1e-6)))
-                # Minimum lifetime guard
-                weather_cell_lifetime = max(weather_cell_lifetime, weather_cell_lifetime_min)
-
-                # Random center within sector bounds
-                weather_cell_latitude_centre, weather_cell_longitude_centre = np.random.uniform(latitude_bounds[0], latitude_bounds[1]), np.random.uniform(longitude_bounds[0], longitude_bounds[1])
-
-                # Sample stable drift and shape
-                self.weather_cell_heading = int(np.random.randint(0, 360)) # deg
-                self.weather_cell_speed = float(np.random.uniform(vmin, vmax)) # kts
-
-                # Jitter the vertices of each weather cell
-                jitter = 0.25
-                self.weather_angles_deg = np.linspace(0.0, 360.0, num=self.n_verts, endpoint=False)
-                self.weather_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.n_verts)
-
-                # Start the weather disturbance with a small radius
-                seed_radius_nm = float(np.random.uniform(0.5 * min_r_nm, min_r_nm))
-
-                # Draw initial polygon
-                weather_cell_poly = []
-                weather_cell_radius = []
-                for ang_deg, jit in zip(self.weather_angles_deg, self.weather_shape_jitter):
-                    radius_jittered_km = seed_radius_nm * float(jit) * NM2KM
-                    weather_cell_radius.append(radius_jittered_km)
-                    vertex_lat, vertex_lon = functions.get_point_at_distance(weather_cell_latitude_centre, weather_cell_longitude_centre, radius_jittered_km, ang_deg)
-                    weather_cell_poly.append((vertex_lat, vertex_lon))
-                # close polygon
-                weather_cell_poly.append(weather_cell_poly[0])
-
-                flattened_polygon = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in weather_cell_poly])
-                stack.process(f"POLY {shape_name}, {flattened_polygon}")
-                stack.process(f"COLOR {shape_name}, BLUE")
-
-                # Persist state
-                self.weather_active = True
-                self.weather_cell_center_lat = float(weather_cell_latitude_centre)
-                self.weather_cell_center_lon = float(weather_cell_longitude_centre)
-                self.weather_disturbance_start = float(simt)
-                self.weather_cell_lifetime = float(weather_cell_lifetime)
-                self.weather_cell_radius = max(weather_cell_radius)
-                # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/constants_general.NM2KM}")
-                # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
     def _generate_random_restricted_areas(self, num_obstacles: int):
         altitude = 350

@@ -332,7 +332,6 @@ class DeployRL(core.Entity):
         Deletion:
             - When simt >= start + lifetime, the cell is removed.
         """
-        # --- Short names to constants (adjust names to your actual constants) ---
         pweather = 0.03                      # spawn probability per tick
         qweather = 1200               # mean lifetime [s] for exponential
         min_r_nm = 6          # small seed radius

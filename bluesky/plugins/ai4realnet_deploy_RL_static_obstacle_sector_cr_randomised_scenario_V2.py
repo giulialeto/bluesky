@@ -60,7 +60,8 @@ class DeployRL(core.Entity):
 
         # stack.process('pcall ai4realnet_deploy_RL/sector.scn;initialize_scenario;DTMULT 5000')
         stack.stack('initialize_scenario 20 3')
-
+        stack.stack('perturbation weather on')
+        stack.stack('perturbation volcanic on')
         stack.stack(f'SAVEIC test_{self.scn_idx}')
         debug.light_blue(f'called save ic for {self.scn_idx}')
         self.initialise_observation_flag = True
@@ -102,6 +103,7 @@ class DeployRL(core.Entity):
             self.scn_idx += 1
             # for some reason, the weather cell on the screen is not deleted when reset is issued 
             stack.stack(f"DELETE WEATHER_CELL")
+            stack.stack(f"DELETE VOLCANIC_CELL")
             # bs.tools.areafilter.deleteArea('WEATHER_CELL')
             bs.sim.step()
             stack.stack('RESET')
@@ -142,9 +144,9 @@ class DeployRL(core.Entity):
             self.obstacle_radius = []
             self.number_obstacles = 0
             for shape_name, shape in tools.areafilter.basic_shapes.items():
-                if shape_name != 'LISBON_FIR' and shape_name != 'WEATHER_CELL':
+                if shape_name != 'LISBON_FIR' and shape_name != 'WEATHER_CELL' and shape_name != 'VOLCANIC_CELL':
                     self.number_obstacles += 1
-                    print(f'Processing obstacle: {shape_name}')
+                    # print(f'Processing obstacle: {shape_name}')
                     coordinates = shape.coordinates
                     coordinates = list(zip(coordinates[::2], coordinates[1::2]))
 
@@ -235,6 +237,19 @@ class DeployRL(core.Entity):
             weather_cell_centre_cos_bearing = np.cos(np.deg2rad(bearing))
             weather_cell_centre_sin_bearing = np.sin(np.deg2rad(bearing))
 
+        # volcanic disturbances
+        if bs.tools.areafilter.basic_shapes.get('VOLCANIC_CELL') is not None:
+            coordinates = bs.tools.areafilter.basic_shapes['VOLCANIC_CELL'].coordinates
+            coordinates = list(zip(coordinates[::2], coordinates[1::2]))
+            (volcanic_cell_center_lat, volcanic_cell_center_lon), volcanic_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates)
+            volcanic_cell_centre_qdr, volcanic_cell_centre_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], volcanic_cell_center_lat, volcanic_cell_center_lon)
+            volcanic_cell_centre_distance = volcanic_cell_centre_distance * RLtools.constants.NM2KM #KM            
+            bearing = RLtools.functions.bound_angle_positive_negative_180(bs.traf.hdg[ac_idx] - volcanic_cell_centre_qdr)
+
+            volcanic_cell_centre_cos_bearing = np.cos(np.deg2rad(bearing))
+            volcanic_cell_centre_sin_bearing = np.sin(np.deg2rad(bearing))
+
+
         # sector polygon edges observation
         sector_points_distance = []
         sector_points_cos_drift = []
@@ -263,6 +278,13 @@ class DeployRL(core.Entity):
             obstacle_centre_sin_bearing.append(weather_cell_centre_sin_bearing)
             obstacle_radius.append(weather_cell_radius)
         
+        if bs.tools.areafilter.basic_shapes.get('VOLCANIC_CELL') is not None:
+            obstacle_centre_distance.append(volcanic_cell_centre_distance)
+            obstacle_centre_cos_bearing.append(volcanic_cell_centre_cos_bearing)
+            obstacle_centre_sin_bearing.append(volcanic_cell_centre_sin_bearing)
+            obstacle_radius.append(volcanic_cell_radius)
+
+
         obstacle_centre_distance = np.array(obstacle_centre_distance)
         obstacle_centre_cos_bearing = np.array(obstacle_centre_cos_bearing)
         obstacle_centre_sin_bearing = np.array(obstacle_centre_sin_bearing)
