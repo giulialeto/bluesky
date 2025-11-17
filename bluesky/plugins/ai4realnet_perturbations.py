@@ -8,7 +8,7 @@ import numpy as np
 import bluesky as bs
 import pandas as pd
 from bluesky.network.publisher import state_publisher, StatePublisher
-from bluesky.plugins.ai4realnet_deploy_RL_tools import functions, constants_general
+from bluesky.plugins.ai4realnet_deploy_RL_tools import constants, functions
 
 import debug
 
@@ -56,9 +56,8 @@ class PerturbationGenerator(core.Entity):
         self.weather_perturbation_flag = False
         self.volcanic_perturbation_flag = False
         
-        # logging
-        import debug
-        debug.light_blue(f'initialised perturbations')
+        # import debug
+        # debug.light_blue(f'initialised perturbations')
     
     def reset(self):
         self.weather_perturbation_flag = False
@@ -78,8 +77,8 @@ class PerturbationGenerator(core.Entity):
             flag (str): 'ON' to enable, 'OFF' to disable. Gets converted to boolean.
         """
 
-        import debug
-        debug.light_blue(f'Adding perturbation: {perturbation_type}, type {type(perturbation_type)} set to {flag} type {type(flag)}')
+        # import debug
+        # debug.light_blue(f'Adding perturbation: {perturbation_type}, type {type(perturbation_type)} set to {flag} type {type(flag)}')
         
         if perturbation_type == 'WEATHER':
             self.weather_perturbation_flag = flag
@@ -90,7 +89,7 @@ class PerturbationGenerator(core.Entity):
         else:
             raise ValueError(f"Unknown perturbation type: {perturbation_type}")
 
-    @core.timed_function(name='update_disturbance', dt=constants_general.ACTION_FREQUENCY)
+    @core.timed_function(name='update_disturbance', dt=constants.ACTION_FREQUENCY)
     def update_disturbance(self):
         """
         Implements ATM 1: Weather perturbations as adverse, drifting storm cells.
@@ -115,13 +114,13 @@ class PerturbationGenerator(core.Entity):
         
             # jitter   = 0.15 # per-vertex shape jitter factor, 15%
             vmin, vmax = (5.0, 100.0)  # speed range [kt]
-            NM2KM = constants_general.NM2KM
+            NM2KM = constants.NM2KM
             weather_cell_lifetime_min = 600  # minimum lifetime [s]
             shape_name = 'WEATHER_CELL'
             simt = bs.sim.simt
             # dt   = (simt - getattr(self, "weather_last_update_t", simt))
             # self.weather_last_update_t = simt
-            dt=constants_general.ACTION_FREQUENCY
+            dt=constants.ACTION_FREQUENCY
 
             # States
             if not hasattr(self, "weather_active"):
@@ -183,8 +182,9 @@ class PerturbationGenerator(core.Entity):
                     # Re-draw polygon (delete + poly keeps syntax simple)
                     stack.process(f"DELETE {shape_name}")
                     flat = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in weather_cell_poly])
-                    stack.process(f"POLY {shape_name}, {flat}")
-                    stack.process(f"COLOR {shape_name}, BLUE")
+                    if bs.traf.id != []:
+                        stack.process(f"POLY {shape_name}, {flat}")
+                        stack.process(f"COLOR {shape_name}, BLUE")
                     # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/constants_general.NM2KM}")
                     # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
@@ -228,8 +228,9 @@ class PerturbationGenerator(core.Entity):
                     weather_cell_poly.append(weather_cell_poly[0])
 
                     flattened_polygon = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in weather_cell_poly])
-                    stack.process(f"POLY {shape_name}, {flattened_polygon}")
-                    stack.process(f"COLOR {shape_name}, BLUE")
+                    if bs.traf.id != []:
+                        stack.process(f"POLY {shape_name}, {flattened_polygon}")
+                        stack.process(f"COLOR {shape_name}, BLUE")
 
                     # Persist state
                     self.weather_active = True
@@ -255,13 +256,13 @@ class PerturbationGenerator(core.Entity):
         
             # jitter   = 0.15 # per-vertex shape jitter factor, 15%
             # vmin, vmax = (5.0, 100.0)  # speed range [kt]
-            NM2KM = constants_general.NM2KM
+            NM2KM = constants.NM2KM
             volcanic_cell_lifetime_min = 12000  # minimum lifetime [s]
             shape_name = 'VOLCANIC_CELL'
             simt = bs.sim.simt
             # dt   = (simt - getattr(self, "weather_last_update_t", simt))
             # self.weather_last_update_t = simt
-            dt=constants_general.ACTION_FREQUENCY
+            dt=constants.ACTION_FREQUENCY
 
             # States
             if not hasattr(self, "volcanic_active"):
@@ -314,8 +315,9 @@ class PerturbationGenerator(core.Entity):
                     # Re-draw polygon (delete + poly keeps syntax simple)
                     stack.process(f"DELETE {shape_name}")
                     flat = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in volcanic_cell_poly])
-                    stack.process(f"POLY {shape_name}, {flat}")
-                    stack.process(f"COLOR {shape_name}, GREEN")
+                    if bs.traf.id != []:
+                        stack.process(f"POLY {shape_name}, {flat}")
+                        stack.process(f"COLOR {shape_name}, GREEN")
                     # stack.process(f"CIRCLE {shape_name}_bounding_circle, {self.weather_cell_center_lat}, {self.weather_cell_center_lon}, {self.weather_cell_radius/constants_general.NM2KM}")
                     # stack.process(f"COLOR {shape_name}_bounding_circle, YELLOW")
 
@@ -355,8 +357,9 @@ class PerturbationGenerator(core.Entity):
                     volcanic_cell_poly.append(volcanic_cell_poly[0])
 
                     flattened_polygon = ", ".join([f"{lat:.6f}, {lon:.6f}" for (lat, lon) in volcanic_cell_poly])
-                    stack.process(f"POLY {shape_name}, {flattened_polygon}")
-                    stack.process(f"COLOR {shape_name}, GREEN")
+                    if bs.traf.id != []:
+                        stack.process(f"POLY {shape_name}, {flattened_polygon}")
+                        stack.process(f"COLOR {shape_name}, GREEN")
 
                     # Persist state
                     self.volcanic_active = True

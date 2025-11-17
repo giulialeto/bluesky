@@ -8,7 +8,7 @@ import numpy as np
 import bluesky as bs
 import pandas as pd
 from bluesky.network.publisher import state_publisher, StatePublisher
-from bluesky.plugins.ai4realnet_deploy_RL_tools import functions, constants_general
+from bluesky.plugins.ai4realnet_deploy_RL_tools import constants, functions
 
 import debug
 
@@ -66,7 +66,7 @@ class ScenarioGenerator(core.Entity):
         # stack.stack('initialize_scenario 20 5')
         # self.initialise_observation_flag = True
         pass
-    
+
     # @stack.command(name ='INITIALIZE_SCENARIO', annotations= '', aliases=('INIT_SCENARIO', 'INITIALISE_SCENARIO'))
     def initialize_scenario(self, number_aircraft: int = N_AC, number_obstacles: int = N_OBSTACLES):
         """
@@ -269,6 +269,7 @@ def _generate_random_aircraft(n_ac, sector_name, obstacle_names, latitude_bounds
     # HARDCODED
     orig_altitude = 350
     dest_altitude = 350
+    orig_speed = 150  # m/s
 
     # if the aircraft is generated inside the sector, keep it, otherwise regenerate
     min_lat, max_lat = latitude_bounds
@@ -386,7 +387,7 @@ def _generate_random_aircraft(n_ac, sector_name, obstacle_names, latitude_bounds
     heading, _ = bs.tools.geo.kwikqdrdist(lat_orig, lon_orig, lat_dest, lon_dest)
 
     for ac_idx in range(n_ac):
-        bs.stack.process(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, 150')
+        bs.stack.process(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, {orig_speed}')
         bs.stack.process(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
         # bs.stack.stack(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, 150')
         # bs.stack.stack(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
