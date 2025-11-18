@@ -57,7 +57,8 @@ class ScenarioGenerator(core.Entity):
         # import debug
         # debug.light_blue(f'initialised SCN_GEN at {self.scn_idx}')
         self.initialise_observation_flag = False
-    
+        self.altitude = 350
+
     def reset(self):
         # import debug
         # debug.light_green(f'reset SCN_GEN at {self.scn_idx}')
@@ -91,7 +92,7 @@ class ScenarioGenerator(core.Entity):
         while self.sample_obstacle:
             self._generate_random_restricted_areas(number_obstacles)
 
-        _generate_random_aircraft(number_aircraft, sector_name, self.obstacle_names, latitude_bounds, longitude_bounds)
+        self._generate_random_aircraft(number_aircraft, sector_name, self.obstacle_names, latitude_bounds, longitude_bounds)
 
         # bs.sim.step()
 
@@ -124,7 +125,6 @@ class ScenarioGenerator(core.Entity):
         obstacle_dict = {}  # Initialize the dictionary to store obstacles for overlap checking
 
         for i in range(num_obstacles):
-
             centre_obst = (self.obstacle_centre_lat[i], self.obstacle_centre_lon[i])
             _, p, R = self._generate_polygon(centre_obst)
             
@@ -254,140 +254,148 @@ class ScenarioGenerator(core.Entity):
         OBSTACLE_DISTANCE_MAX = 500 # KM
 
         for i in range(num_obstacles):
-            obstacle_dis_from_reference = np.random.randint(OBSTACLE_DISTANCE_MIN, OBSTACLE_DISTANCE_MAX)
-            obstacle_hdg_from_reference = np.random.randint(0, 360)
-            # ac_idx = bs.traf.id2idx(acid)
+            obstacle_centre_inside_sector = False
+            while not obstacle_centre_inside_sector:                
+                obstacle_dis_from_reference = np.random.randint(OBSTACLE_DISTANCE_MIN, OBSTACLE_DISTANCE_MAX)
+                obstacle_hdg_from_reference = np.random.randint(0, 360)
+                # ac_idx = bs.traf.id2idx(acid)
 
-            obstacle_centre_lat, obstacle_centre_lon = functions.get_point_at_distance(latitude_bounds[0] + (latitude_bounds[1]-latitude_bounds[0])/2, longitude_bounds[0] + (longitude_bounds[1]-longitude_bounds[0])/2, obstacle_dis_from_reference, obstacle_hdg_from_reference)    
+                obstacle_centre_lat, obstacle_centre_lon = functions.get_point_at_distance(latitude_bounds[0] + (latitude_bounds[1]-latitude_bounds[0])/2, longitude_bounds[0] + (longitude_bounds[1]-longitude_bounds[0])/2, obstacle_dis_from_reference, obstacle_hdg_from_reference)   
+                obstacle_centre_inside_sector = bs.tools.areafilter.checkInside(
+                    sector_name,
+                    np.array([obstacle_centre_lat]),
+                    np.array([obstacle_centre_lon]),
+                    np.array([self.altitude])
+                )[0] 
             self.obstacle_centre_lat.append(obstacle_centre_lat)
             self.obstacle_centre_lon.append(obstacle_centre_lon)
 
-def _generate_random_aircraft(n_ac, sector_name, obstacle_names, latitude_bounds, longitude_bounds):
-    """
-    Generate random scenario with random initial positions and random destinations for the aircraft
-    """
-    # HARDCODED
-    orig_altitude = 350
-    dest_altitude = 350
-    orig_speed = 150  # m/s
+    def _generate_random_aircraft(self, n_ac, sector_name, obstacle_names, latitude_bounds, longitude_bounds):
+        """
+        Generate random scenario with random initial positions and random destinations for the aircraft
+        """
+        # HARDCODED
+        orig_altitude = self.altitude
+        dest_altitude = self.altitude
+        orig_speed = 150  # m/s
 
-    # if the aircraft is generated inside the sector, keep it, otherwise regenerate
-    min_lat, max_lat = latitude_bounds
-    min_lon, max_lon = longitude_bounds
+        # if the aircraft is generated inside the sector, keep it, otherwise regenerate
+        min_lat, max_lat = latitude_bounds
+        min_lon, max_lon = longitude_bounds
 
-    lat_orig = np.full(n_ac, np.nan)
-    lon_orig = np.full(n_ac, np.nan)
-    good = np.zeros(n_ac, dtype=bool)
+        lat_orig = np.full(n_ac, np.nan)
+        lon_orig = np.full(n_ac, np.nan)
+        good = np.zeros(n_ac, dtype=bool)
 
-    max_iter = 10_000  # safety guard
-    counter = 0
+        max_iter = 10_000  # safety guard
+        counter = 0
 
-    while np.isnan(lat_orig).any():
-        counter += 1
-        if counter > max_iter:
-            raise RuntimeError("ORIG Too many iterations - check bounds/sector overlap.")
+        while np.isnan(lat_orig).any():
+            counter += 1
+            if counter > max_iter:
+                raise RuntimeError("ORIG Too many iterations - check bounds/sector overlap.")
 
-        # indices that still need valid points
-        # remaining_idx = np.isnan(lat_orig)
-        remaining_idx = np.flatnonzero(~good)
-        m = remaining_idx.size
+            # indices that still need valid points
+            # remaining_idx = np.isnan(lat_orig)
+            remaining_idx = np.flatnonzero(~good)
+            m = remaining_idx.size
 
-        # sample only for the remaining positions
-        lat_try = np.random.uniform(min_lat, max_lat, size=m)
-        lon_try = np.random.uniform(min_lon, max_lon, size=m)
-        altitude = np.ones(m)*orig_altitude
+            # sample only for the remaining positions
+            lat_try = np.random.uniform(min_lat, max_lat, size=m)
+            lon_try = np.random.uniform(min_lon, max_lon, size=m)
+            altitude = np.ones(m)*orig_altitude
 
-        inside_sector = bs.tools.areafilter.checkInside(
-            sector_name,
-            lat_try,
-            lon_try,
-            altitude
-        ).astype(bool)
-
-        # debug.cyan(f'inside_sector: {inside_sector}')
-        inside_any_restricted = np.zeros_like(inside_sector, dtype=bool)
-        # debug.cyan(f'inside_any_restricted: {inside_any_restricted}')
-
-        for name in obstacle_names:
-            # print(f'name: {name}')
-
-            inside_restricted_area = bs.tools.areafilter.checkInside(
-                name,
+            inside_sector = bs.tools.areafilter.checkInside(
+                sector_name,
                 lat_try,
                 lon_try,
                 altitude
             ).astype(bool)
-            # debug.cyan(f'inside_restricted: {inside_restricted_area}')
-            inside_any_restricted |= inside_restricted_area
+
+            # debug.cyan(f'inside_sector: {inside_sector}')
+            inside_any_restricted = np.zeros_like(inside_sector, dtype=bool)
             # debug.cyan(f'inside_any_restricted: {inside_any_restricted}')
 
+            for name in obstacle_names:
+                # print(f'name: {name}')
 
-        inside = inside_sector & (~inside_any_restricted)
-        # debug.cyan(f'inside: {inside}')
+                inside_restricted_area = bs.tools.areafilter.checkInside(
+                    name,
+                    lat_try,
+                    lon_try,
+                    altitude
+                ).astype(bool)
+                # debug.cyan(f'inside_restricted: {inside_restricted_area}')
+                inside_any_restricted |= inside_restricted_area
+                # debug.cyan(f'inside_any_restricted: {inside_any_restricted}')
 
-        # place successful samples into their slots
-        lat_orig[remaining_idx[inside]] = lat_try[inside]
-        lon_orig[remaining_idx[inside]] = lon_try[inside]
-        good[remaining_idx[inside]] = True
 
-    lat_dest = np.full(n_ac, np.nan)
-    lon_dest = np.full(n_ac, np.nan)
-    good = np.zeros(n_ac, dtype=bool)
+            inside = inside_sector & (~inside_any_restricted)
+            # debug.cyan(f'inside: {inside}')
 
-    max_iter = 10_000  # safety guard
-    counter = 0
+            # place successful samples into their slots
+            lat_orig[remaining_idx[inside]] = lat_try[inside]
+            lon_orig[remaining_idx[inside]] = lon_try[inside]
+            good[remaining_idx[inside]] = True
 
-    while np.isnan(lat_dest).any():
-        counter += 1
-        if counter > max_iter:
-            raise RuntimeError("DEST Too many iterations — check bounds/sector overlap.")
+        lat_dest = np.full(n_ac, np.nan)
+        lon_dest = np.full(n_ac, np.nan)
+        good = np.zeros(n_ac, dtype=bool)
 
-        # indices that still need valid points
-        # remaining_idx = np.isnan(lat_dest)
-        remaining_idx = np.flatnonzero(~good)
-        m = remaining_idx.size
+        max_iter = 10_000  # safety guard
+        counter = 0
 
-        # sample only for the remaining positions
-        lat_try = np.random.uniform(min_lat, max_lat, size=m)
-        lon_try = np.random.uniform(min_lon, max_lon, size=m)
-        altitude = np.ones(m)*dest_altitude
+        while np.isnan(lat_dest).any():
+            counter += 1
+            if counter > max_iter:
+                raise RuntimeError("DEST Too many iterations — check bounds/sector overlap.")
 
-        inside_sector = bs.tools.areafilter.checkInside(
-            sector_name,
-            lat_try,
-            lon_try,
-            altitude
-        ).astype(bool)
-        # debug.red(f'inside_sector: {inside_sector}')
+            # indices that still need valid points
+            # remaining_idx = np.isnan(lat_dest)
+            remaining_idx = np.flatnonzero(~good)
+            m = remaining_idx.size
 
-        inside_any_restricted = np.zeros_like(inside_sector, dtype=bool)
-        # debug.red(f'inside_any_restricted: {inside_any_restricted}')
+            # sample only for the remaining positions
+            lat_try = np.random.uniform(min_lat, max_lat, size=m)
+            lon_try = np.random.uniform(min_lon, max_lon, size=m)
+            altitude = np.ones(m)*dest_altitude
 
-        for name in obstacle_names:
-            # print(f'name: {name}')
-            inside_restricted_area = bs.tools.areafilter.checkInside(
-                name,
+            inside_sector = bs.tools.areafilter.checkInside(
+                sector_name,
                 lat_try,
                 lon_try,
                 altitude
             ).astype(bool)
-            # debug.red(f'inside_restricted_area: {inside_restricted_area}, lat_try: {lat_try}, lon_try: {lon_try}, altitude: {altitude} ')
-            inside_any_restricted |= inside_restricted_area
+            # debug.red(f'inside_sector: {inside_sector}')
+
+            inside_any_restricted = np.zeros_like(inside_sector, dtype=bool)
             # debug.red(f'inside_any_restricted: {inside_any_restricted}')
 
-        inside = inside_sector & (~inside_any_restricted)
-        # debug.red(f'inside: {inside}')
+            for name in obstacle_names:
+                # print(f'name: {name}')
+                inside_restricted_area = bs.tools.areafilter.checkInside(
+                    name,
+                    lat_try,
+                    lon_try,
+                    altitude
+                ).astype(bool)
+                # debug.red(f'inside_restricted_area: {inside_restricted_area}, lat_try: {lat_try}, lon_try: {lon_try}, altitude: {altitude} ')
+                inside_any_restricted |= inside_restricted_area
+                # debug.red(f'inside_any_restricted: {inside_any_restricted}')
 
-        # place successful samples into their slots
-        lat_dest[remaining_idx[inside]] = lat_try[inside]
-        lon_dest[remaining_idx[inside]] = lon_try[inside]
-        good[remaining_idx[inside]] = True
-        # print(f'lat_dest: {lat_dest}')
-        # print(f'lon_dest: {lon_dest}')
-    heading, _ = bs.tools.geo.kwikqdrdist(lat_orig, lon_orig, lat_dest, lon_dest)
+            inside = inside_sector & (~inside_any_restricted)
+            # debug.red(f'inside: {inside}')
 
-    for ac_idx in range(n_ac):
-        bs.stack.process(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, {orig_speed}')
-        bs.stack.process(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
-        # bs.stack.stack(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, 150')
-        # bs.stack.stack(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
+            # place successful samples into their slots
+            lat_dest[remaining_idx[inside]] = lat_try[inside]
+            lon_dest[remaining_idx[inside]] = lon_try[inside]
+            good[remaining_idx[inside]] = True
+            # print(f'lat_dest: {lat_dest}')
+            # print(f'lon_dest: {lon_dest}')
+        heading, _ = bs.tools.geo.kwikqdrdist(lat_orig, lon_orig, lat_dest, lon_dest)
+
+        for ac_idx in range(n_ac):
+            bs.stack.process(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, {orig_speed}')
+            bs.stack.process(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
+            # bs.stack.stack(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, 150')
+            # bs.stack.stack(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
