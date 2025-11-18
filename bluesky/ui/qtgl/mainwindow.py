@@ -320,6 +320,16 @@ class MainWindow(QMainWindow, Base):
     def getviewctr(self):
         return self.radarwidget.pan
 
+    @stack.command
+    def getpan(self):
+        stack.stack(f'ECHO pan: {self.radarwidget.pan}')
+        return
+
+    @stack.command
+    def getzoom(self):
+        stack.stack(f'ECHO zoom: {self.radarwidget.zoom}')
+        return
+
     def getviewbounds(self): # Return current viewing area in lat, lon
         return self.radarwidget.viewportlatlon()
 
