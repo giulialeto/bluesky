@@ -4,7 +4,7 @@
     Authors: Giulia Leto
 """
 from bluesky import core, stack, traf, tools, settings 
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, TD3, PPO, DDPG
 import numpy as np
 import bluesky.plugins.ai4realnet_deploy_RL_tools as RLtools
 import bluesky as bs
@@ -29,7 +29,7 @@ def init_plugin():
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'DeployRL2', #'Deploy_RL', #
+        'plugin_name':     'DeployRLV2', #'Deploy_RL', #
         # The type of this plugin.
         'plugin_type':     'sim',
         }
@@ -79,11 +79,19 @@ class DeployRL(core.Entity):
             self.algorithm = algorithm
             self.number_obstacles = number_obstacles
             self.number_aircraft = number_aircraft
-            self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{env_name}/{env_name}_{algorithm}/model", env=None)
-            
+            if self.algorithm.lower() in ('sac'):
+                self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            elif self.algorithm.lower() in ('td3'):
+                self.model = TD3.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            elif self.algorithm.lower() in ('ppo'):
+                self.model = PPO.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            elif self.algorithm.lower() in ('ddpg'):
+                self.model = DDPG.load(f"bluesky/plugins/ai4realnet_deploy_RL_tools/models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+
             # logging
             self.log_buffer = []   # temporary storage
-            self.csv_file = (f"output/ai4realnet_deploy_RL_{env_name}_log.csv")
+            self.csv_file = (f"output/ai4realnet_deploy_RL_{self.env_name}_{self.algorithm}_log.csv")
+            
             self.first_initialization = False
         
         stack.stack(f'initialize_scenario {number_aircraft} {number_obstacles}')
