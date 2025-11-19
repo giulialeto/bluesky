@@ -349,5 +349,5 @@ class ScenarioGenerator(core.Entity):
         heading, _ = bs.tools.geo.kwikqdrdist(lat_orig, lon_orig, lat_dest, lon_dest)
 
         for ac_idx in range(n_ac):
-            bs.stack.process(f'CRE AC{ac_idx+1}, B787, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, {orig_speed}')
+            bs.stack.process(f'CRE AC{ac_idx+1}, A320, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, {orig_speed}')
             bs.stack.process(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
