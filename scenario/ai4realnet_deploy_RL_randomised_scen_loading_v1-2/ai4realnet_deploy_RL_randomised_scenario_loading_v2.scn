@@ -1,0 +1,14 @@
+#-------------------------------------------------------------------------------
+#   AI4REALNET D1.4 BlueSky scenario for testing the RL models on realistic data
+#   Authors: Giulia Leto
+#	Date: Nov 2025
+#-------------------------------------------------------------------------------
+
+00:00:00.00>PLUGIN scenario_generator_v0
+00:00:00.00>PLUGIN disturbance_generator_v0
+00:00:00.00>PLUGIN DeployRL_v2
+00:00:00.01> deploy_RL staticobstacleenv-v0 sac 20 5
+# 00:00:00.01> deploy_RL staticobstaclecrenv-v0 sac 20 5
+# 00:00:00.01> deploy_RL staticobstaclesectorenv-v0 sac 20 5
+# 00:00:00.01> deploy_RL staticobstaclesectorcrenv-v0 sac 20 5
+

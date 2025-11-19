@@ -1,13 +1,13 @@
 """
-    AI4REALNET - Deliverable 1.4, Task 1.3 and 4.2 BlueSky plugin for generating weather and volcanic perturbations
+    AI4REALNET - BlueSky plugin for deploying RL-based model
+    ENV: StaticObstacleSectorCREnv-v0
     Authors: Giulia Leto
-    Date: Nov 2025
 """
 from bluesky import core, stack, traf, tools, settings 
 import numpy as np
 import bluesky as bs
 import pandas as pd
-from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import constants, functions
+from bluesky.plugins.ai4realnet_deploy_RL_tools_v2 import constants, functions
 
 # HARDCODED Global data
 sector_name = 'LISBON_FIR'
@@ -20,6 +20,7 @@ longitude_bounds = (-18.3, -6.1)
 
 perturbation_generator = None
 
+
 def init_plugin():
     global perturbation_generator
     perturbation_generator = PerturbationGenerator()
@@ -27,7 +28,7 @@ def init_plugin():
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'disturbance_generator',
+        'plugin_name':     'disturbance_generator_v0',
         # The type of this plugin.
         'plugin_type':     'sim',
         }

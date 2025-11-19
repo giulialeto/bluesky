@@ -1,13 +1,13 @@
 """
-    AI4REALNET -  Deliverable 1.4 BlueSky plugin for generating random scenarios inside Lisbon FIR
+    AI4REALNET - BlueSky plugin for deploying RL-based model
+    ENV: StaticObstacleSectorCREnv-v0
     Authors: Giulia Leto
-    Date: Nov 2025
 """
 from bluesky import core, stack, traf, tools, settings 
 import numpy as np
 import bluesky as bs
 import pandas as pd
-from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import functions
+from bluesky.plugins.ai4realnet_deploy_RL_tools_v2 import functions
 
 # Global data - softcoded parameters
 N_AC = 20  # Number of aircraft in the randomised scenario
@@ -31,7 +31,7 @@ def init_plugin():
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'scenario_generator',
+        'plugin_name':     'scenario_generator_v0',
         # The type of this plugin.
         'plugin_type':     'sim',
         }
@@ -70,8 +70,8 @@ class ScenarioGenerator(core.Entity):
         Example:
             INITIALIZE_SCENARIO 20 5
         """
-        stack.process('pcall ai4realnet_deploy_RL_batch/sector.scn')
-        stack.process('pcall ai4realnet_deploy_RL_batch/config_screen')
+        stack.process('pcall ai4realnet_deploy_RL_randomised_scen_loading_v1-2/sector.scn')
+        stack.process('pcall ai4realnet_deploy_RL_randomised_scen_loading_v1-2/config_screen')
 
         # check if Lisbon FIR is already loaded
         if bs.tools.areafilter.basic_shapes.get(sector_name) is None:
@@ -86,7 +86,7 @@ class ScenarioGenerator(core.Entity):
     def _generate_random_restricted_areas(self, num_obstacles: int):
         altitude = 350
 
-        # delete obstacles that are generated while iterating to find non overlapping obstacles
+        # delete existing obstacles from previous episode in BlueSky and obstacles that are generated while iterating to find non overlapping obstacles
         all_obstacle_names = []
         for shape_name, shape in tools.areafilter.basic_shapes.items():
             # print(f'Found existing obstacle: {shape_name}')
@@ -253,6 +253,7 @@ class ScenarioGenerator(core.Entity):
                 raise RuntimeError("ORIG Too many iterations - check bounds/sector overlap.")
 
             # indices that still need valid points
+            # remaining_idx = np.isnan(lat_orig)
             remaining_idx = np.flatnonzero(~good)
             m = remaining_idx.size
 

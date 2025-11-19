@@ -1,0 +1,30 @@
+#-------------------------------------------------------------------------------
+#   AI4REALNET D1.4 BlueSky scenario for testing the RL models on random 
+#   Authors: Giulia Leto
+#   Date: Nov 2025
+#
+#   Instructions: 
+#   - in BlueSky, load 'PLUGIN deployRL_batch',
+#   - load the scenario using 'DETACHED_BATCH ai4realnet_deploy_RL_batch.scn'
+#
+#   Available Environments: 
+#   - StaticObstacleEnv-v0, 
+#   - StaticObstacleCREnv-v0, 
+#   - StaticObstacleSectorEnv-v0, 
+#   - StaticObstacleSectorCREnv-v0
+#
+#   Available Algorithms: sac, ddpg, td3, ppo
+#-------------------------------------------------------------------------------
+
+00:00:00.00>PLUGIN scenario_generator
+00:00:00.00>PLUGIN disturbance_generator
+# initialize_scenario <N_AC>, <N_OBSTACLES>
+00:00:00.00> initialize_scenario 10, 5
+00:00:00.00> perturbation weather on
+00:00:00.00> perturbation volcanic on
+# deploy_RL <ENVIRONMENT>, <ALGORITHM>
+00:00:00.00> deploy_RL StaticObstacleEnv-v0 SAC
+00:00:00.00>OP
+00:00:00.00>DTMULT 5000
+# repeats <N_SCN>
+00:00:00.00>repeats 10

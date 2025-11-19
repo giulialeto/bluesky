@@ -1,229 +1,162 @@
 """
-    AI4REALNET -  Deliverable 1.4 BlueSky plugin for deploying RL-based model in batch scenarios
+    AI4REALNET - BlueSky plugin for deploying RL-based model
+    ENV: STATICOBSTACLESECTORCRENV-V0
     Authors: Giulia Leto
-    Date: Nov 2025
 """
 from bluesky import core, stack, traf, tools, settings 
-from bluesky.stack.simstack import readscn
-import bluesky as bs
-import bluesky.plugins.ai4realnet_deploy_RL_tools_batch as RLtools
 from stable_baselines3 import SAC, TD3, PPO, DDPG
 import numpy as np
+import bluesky.plugins.ai4realnet_deploy_RL_tools_v2 as RLtools
+import bluesky as bs
 import pandas as pd
+from bluesky.network.publisher import state_publisher, StatePublisher
 import os, datetime
 
-# Global variables
-sector_name = 'LISBON_FIR'
-save_dir = 'ai4realnet_deploy_RL_batch/generated_scenarios'
+N_SCN = 10 # Number of testing iterations
 
-# Plugin initialization function
+sector_name = 'LISBON_FIR'
+latitude_bounds = (31.4, 43.0)
+longitude_bounds = (-18.3, -6.1)
+
+# smaller bounds for testing stage
+latitude_bounds = (33.0, 36.0)
+longitude_bounds = (-18.0, -12.0)
+
+save_dir = 'ai4realnet_deploy_RL_randomised_scen_loading_v1-2/generated_scenarios/v2'
+
 def init_plugin():
     deploy_RL = DeployRL()
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'DeployRL_batch',
+        'plugin_name':     'DeployRL_v2', 
         # The type of this plugin.
         'plugin_type':     'sim',
         }
-
-    return config
+    stackfunctions = {
+        'DEPLOY_RL': [
+            'DEPLOY_RL [ENV_NAME] [ALGORITHM] [N_AC] [N_OBSTACLES]',
+            '[txt] [txt] [int] [int]',
+            deploy_RL.initialize_RL,
+            'Initialises the RL deployment plugin with the specified environment and algorithm',
+        ]}
+    return config, stackfunctions
 
 class DeployRL(core.Entity):  
-
     def __init__(self):
         super().__init__()
+        self.scn_idx = 0
 
-        self.start_next = True
-        self.repeats = 0
-        self.total = 0
-        self.scentime = []
-        self.scencmd = []
-        self.start_updates = False
-        self.max_sim_time = 3600  # seconds
         os.makedirs(f'scenario/{save_dir}', exist_ok=True)
+        self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        # print(f'initialised deploy RL at {self.scn_idx}')
+        self.first_initialization = True
 
     def reset(self):
+        # print(f'reset deploy RL at {self.scn_idx}')
+        
+        # for shape_name, _ in tools.areafilter.basic_shapes.items():
+        #     print(f'Existing obstacle after reset: {shape_name}')
+
+
+        # stack.process('pcall ai4realnet_deploy_RL/sector.scn;initialize_scenario;DTMULT 5000')
         pass
 
-    @stack.command
-    def detached_batch(self, fname: str):
+    def initialize_RL(self, env_name: str, algorithm: str, number_aircraft: int, number_obstacles: int):
         """
-        Load a batch scenario file, extract REPEATS line,
-        and store the scenario commands locally.
+        Initialize a new random scenario with the specified number of aircraft and obstacles.
+
+        Args:
+            number_aircraft (int): Number of aircraft to generate in the scenario.
+            number_obstacles (int): Number of random restricted areas to create.
+
+        Example:
+            INITIALIZE_SCENARIO 20 5
         """
-        # use the server batch file load function to populate self.scen_batch
-        scentime = []
-        scencmd = []
-        for (cmdtime, cmd) in readscn(fname):
-                scentime.append(cmdtime)
-                scencmd.append(cmd)
-                # print(f'[DeployRL] Read command: {cmd} at time {cmdtime}')
+        if self.first_initialization:
+            self.env_name = env_name
+            self.algorithm = algorithm
+            self.number_obstacles = number_obstacles
+            self.number_aircraft = number_aircraft
+            if self.algorithm.lower() in ('sac'):
+                self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            elif self.algorithm.lower() in ('td3'):
+                self.model = TD3.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            elif self.algorithm.lower() in ('ppo'):
+                self.model = PPO.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            elif self.algorithm.lower() in ('ddpg'):
+                self.model = DDPG.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
 
-        idx = next(
-            (i for i, cmd in enumerate(scencmd)
-            if cmd.strip().lower().startswith('repeats')),
-            None
-        )
-
-        if idx is None:
-            # No repeats line found
-            print(f"[DeployRL] No 'repeats' line found in scenario '{fname}'.")
-            return
-
-        cmd = scencmd.pop(idx)
-        scentime.pop(idx)
-        stack.process(cmd)
-
-        # Remove plugin lines from scenario
-        new_scentime = []
-        new_scencmd  = []
-
-        for t, c in zip(scentime, scencmd):
-            # Skip plugin lines
-            if c.strip().lower().startswith("plugin"):
-                stack.process(c)  # process the plugin command
-                continue
-            new_scentime.append(t)
-            new_scencmd.append(c)
-
+            # logging
+            self.log_buffer = []   # temporary storage
+            self.csv_file = (f"output/ai4realnet_deploy_RL_v2_{self.env_name}_{self.algorithm}_log.csv")
+            
+            self.first_initialization = False
         
-        self.start_next = True
-
-
-        self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        for i, cmd in enumerate(new_scencmd):
-            line = cmd.strip().lower()
-
-            # Parse: initialize_scenario NUM_AIRCRAFT, NUM_OBSTACLES
-            if line.startswith("initialize_scenario"):
-                # Remove command name
-                args = line.replace("initialize_scenario", "").strip()
-                parts = [p.strip() for p in args.split(",")]
-
-                if len(parts) == 2:
-                    self.number_aircraft = int(parts[0])
-                    self.number_obstacles = int(parts[1])
-                else:
-                    print("[DeployRL] ERROR: initialize_scenario must have exactly 2 arguments.")
-
-            # Parse: deploy_RL ENV_NAME ALGORITHM
-            elif line.startswith("deploy_rl"):
-                tokens = line.split()
-                # tokens = ["deploy_rl", "staticobstacleenv-v0", "sac"]
-                if len(tokens) == 3:
-                    self.env_name = tokens[1]
-                    self.algorithm = tokens[2]
-                else:
-                    print("[DeployRL] ERROR: deploy_RL must be: deploy_RL <env_name> <algorithm>")
-                index_to_remove = i
-                
-        new_scencmd.pop(index_to_remove)  # remove deploy_RL line after processing
-        new_scentime.pop(index_to_remove) # remove corresponding time entry
-        
-        self.scentime = new_scentime
-        self.scencmd  = new_scencmd
-
-        # Load the RL model 
-        if self.algorithm.lower() in ('sac'):
-            self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        elif self.algorithm.lower() in ('td3'):
-            self.model = TD3.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        elif self.algorithm.lower() in ('ppo'):
-            self.model = PPO.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        elif self.algorithm.lower() in ('ddpg'):
-            self.model = DDPG.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-
-        # logging
-        self.log_buffer = []   # temporary storage
-        self.csv_file = (f"output/ai4realnet_deploy_RL_batch_{self.env_name}_{self.algorithm}_log.csv")
-        # print(f'self.env_name: {self.env_name}, self.algorithm: {self.algorithm}, number_aircraft: {self.number_aircraft}, number_obstacles: {self.number_obstacles}')
-
-        if self.env_name in ('staticobstaclesectorcrenv-v0'):
-            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-            # Model parameters
-            self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
-            self.NUM_INTRUDERS = 5
-            self.AC_SPD = 150 # m/s
-            self.D_HEADING = 45 #degrees
-            self.D_SPEED = 20/3 # m/s
-
-            self.ACTION_FREQUENCY = 10
-
-            self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
-            self.DISTANCE_MARGIN = 5 # km
-
-        if self.env_name in ('staticobstaclesectorenv-v0'):
-            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-            # Model parameters
-            self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
-            self.AC_SPD = 150 # m/s
-            self.D_HEADING = 45 #degrees
-            self.D_SPEED = 20/3 # m/s
-
-            self.ACTION_FREQUENCY = 10
-
-            self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
-            self.DISTANCE_MARGIN = 5 # km
-        if self.env_name in ('staticobstaclecrenv-v0'):
-            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-            # Model parameters
-            self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
-            self.NUM_INTRUDERS = 5
-            self.AC_SPD = 150 # m/s
-            self.D_HEADING = 45 #degrees
-            self.D_SPEED = 20/3 # m/s
-
-            self.ACTION_FREQUENCY = 10
-            self.DISTANCE_MARGIN = 5 # km
-
-        if self.env_name in ('staticobstacleenv-v0'):
-            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-            # Model parameters
-            self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
-            self.AC_SPD = 150 # m/s
-            self.D_HEADING = 45 #degrees
-            self.D_SPEED = 20/3 # m/s
-
-            self.ACTION_FREQUENCY = 10
-            self.DISTANCE_MARGIN = 5 # km
-
-        self.start_updates = True
-        stack.process(f'OP')
+        stack.stack(f'initialize_scenario {number_aircraft} {number_obstacles}')
+        stack.stack(f'perturbation weather on')
+        stack.stack(f'perturbation volcanic on')
+        stack.stack(f'SAVEIC {save_dir}/{self.timestamp}_{env_name}_{algorithm}_{number_aircraft}_{number_obstacles}_{self.scn_idx}')
         stack.process(f'DTMULT 5000')
+        # print(f'called save ic for {self.scn_idx}')
+        # print(f'self.env_name is {self.env_name}')
+        self.initialise_observation_flag = True
+        if self.env_name == 'STATICOBSTACLESECTORCRENV-V0':
+            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
+            # Model parameters
+            self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
+            self.NUM_INTRUDERS = 5
+            self.AC_SPD = 150 # m/s
+            self.D_HEADING = 45 #degrees
+            self.D_SPEED = 20/3 # m/s
 
+            self.ACTION_FREQUENCY = 10
 
-    @stack.command
-    def end_scen(self):
-        """
-        Mark the current scenario as finished so the next one can start.
-        """
-        self.start_next = True
+            self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
+            self.DISTANCE_MARGIN = 5 # km
 
-    @stack.command
-    def repeats(self, repetitions: int):
-        """
-        Set how many times the detached batch scenario should be run.
-        """
-        self.total = self.repeats = repetitions
-        
+        if self.env_name == 'STATICOBSTACLESECTORENV-V0':
+            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
+            # Model parameters
+            self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
+            self.AC_SPD = 150 # m/s
+            self.D_HEADING = 45 #degrees
+            self.D_SPEED = 20/3 # m/s
+
+            self.ACTION_FREQUENCY = 10
+
+            self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
+            self.DISTANCE_MARGIN = 5 # km
+        if self.env_name == 'STATICOBSTACLECRENV-V0':
+            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
+            # Model parameters
+            self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
+            self.NUM_INTRUDERS = 5
+            self.AC_SPD = 150 # m/s
+            self.D_HEADING = 45 #degrees
+            self.D_SPEED = 20/3 # m/s
+
+            self.ACTION_FREQUENCY = 10
+            self.DISTANCE_MARGIN = 5 # km
+
+        if self.env_name == 'STATICOBSTACLEENV-V0':
+            # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
+            # Model parameters
+            self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
+            self.AC_SPD = 150 # m/s
+            self.D_HEADING = 45 #degrees
+            self.D_SPEED = 20/3 # m/s
+
+            self.ACTION_FREQUENCY = 10
+            self.DISTANCE_MARGIN = 5 # km
+
     @core.timed_function(name='update', dt=RLtools.constants.ACTION_FREQUENCY)
     def update(self):
-        if self.start_updates == False:
+        if self.first_initialization:
             return
-        
-        if self.start_next and self.repeats >= 0:
-            self.repeats -= 1
-            self.scn_idx = self.total - self.repeats
-            bs.sim.start_batch_scenario(f'batch_{self.scn_idx}', list(self.scentime), list(self.scencmd))
-            stack.stack(f'SAVEIC {save_dir}/{self.timestamp}_{self.env_name}_{self.algorithm}_{self.number_aircraft}_{self.number_obstacles}_{self.scn_idx}')
-
-            self.start_next = False
-            self.initialise_observation_flag = True
-            self.initial_observation_done = False
-            stack.stack(f'ECHO Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}')
-            print(f'Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}')
+        # if self.initialise_observation_flag:
+        #     for shape_name, _ in tools.areafilter.basic_shapes.items():
+        #         print(f'Existing obstacle at first update after reset: {shape_name}')
 
         for ac_idx, id in enumerate(traf.id):
             _, dest_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
@@ -251,15 +184,19 @@ class DeployRL(core.Entity):
             df.to_csv(self.csv_file, mode="a", index=False, header=not pd.io.common.file_exists(self.csv_file))
             self.log_buffer.clear()
 
+        if traf.id == [] and (self.scn_idx < N_SCN+1):
+            self.scn_idx += 1
+            # for some reason, the weather and volcanic cell on the screen is not deleted when reset is issued 
+            # stack.process(f"DELETE WEATHER_CELL")
+            # stack.process(f"DELETE VOLCANIC_CELL")
+            # bs.tools.areafilter.deleteArea('WEATHER_CELL')
+            stack.process('RESET')
+            # stack.process('RESET')
+            stack.process(f'deploy_RL {self.env_name} {self.algorithm} {self.number_aircraft} {self.number_obstacles}')
 
-        if (traf.id == [] or simt > self.max_sim_time) and (self.repeats > 0) and (self.initial_observation_done):
-            print(f'Ending scenario batch_{self.scn_idx}')
-            stack.process('END_SCEN')
-
-
-        if (traf.id == [] or simt > self.max_sim_time) and (self.repeats == 0) and (self.initial_observation_done):
-            print(f'Ending scenario batch_{self.scn_idx}')
+        if traf.id == [] and (self.scn_idx == N_SCN+1):
             stack.process('QUIT')
+            # stack.process('QUIT')
 
     def _get_obs(self, ac_idx):
         """
@@ -269,14 +206,15 @@ class DeployRL(core.Entity):
             waypoint_distances = []
 
             # Give aircraft initial heading
-            for ac_idx, _ in enumerate(traf.id):
-                _, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
+            for ac_idx, id in enumerate(traf.id):
+                initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
+                # bs.traf.hdg[ac_idx] = initial_wpt_qdr
                 waypoint_distances.append(initial_wpt_dist)
 
             # Scaling factor for the distances in the observation vector
             self.waypoint_distance_max = max(waypoint_distances)
 
-            if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0'):
+            if self.env_name in ('STATICOBSTACLESECTORCRENV-V0', 'STATICOBSTACLESECTORENV-V0'):
                 sector = tools.areafilter.basic_shapes[sector_name]
                 coordinates = sector.coordinates
                 latitudes = coordinates[::2]
@@ -306,8 +244,8 @@ class DeployRL(core.Entity):
             self.max_obstacle_radius = max(self.obstacle_radius)
 
             self.initialise_observation_flag = False
-            self.initial_observation_done = True
-
+            # import code
+            # code.interact(local=locals())
         # destination waypoint
         wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
     
@@ -364,7 +302,7 @@ class DeployRL(core.Entity):
         
         obstacle_radius = self.obstacle_radius.copy()
 
-        # Find the RLtools.constants.NUM_OBSTACLES closest obstacles to the ownship (restricted areas or weather cells)
+        ## Find the RLtools.constants.NUM_OBSTACLES closest obstacles to the ownship (restricted areas or weather cells)
         # RLtools.constants.NUM_OBSTACLES depends on how many obstacles the AI has been trained with
         if bs.tools.areafilter.basic_shapes.get('WEATHER_CELL') is not None:
             obstacle_centre_distance.append(weather_cell_centre_distance)
@@ -402,7 +340,7 @@ class DeployRL(core.Entity):
             obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=0.0)
 
 
-        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclecrenv-v0'):
+        if self.env_name in ('STATICOBSTACLESECTORCRENV-V0', 'STATICOBSTACLECRENV-V0'):
             # intruder observation
             intruders_lat = np.delete(bs.traf.lat, ac_idx)
             intruders_lon = np.delete(bs.traf.lon, ac_idx)
@@ -439,7 +377,7 @@ class DeployRL(core.Entity):
                 intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
                 intruder_y_difference_speed =  np.pad(intruder_y_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
 
-        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0'):
+        if self.env_name in ('STATICOBSTACLESECTORCRENV-V0', 'STATICOBSTACLESECTORENV-V0'):
             # sector polygon edges observation
             sector_points_distance = []
             sector_points_cos_drift = []
@@ -448,7 +386,7 @@ class DeployRL(core.Entity):
             # Calculate distance and bearing from the ownship to each of the sector points
             for point_index in range(len(self.sector_points)):
                 sector_points_qdr, sector_points_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.sector_points[point_index,0],self.sector_points[point_index,1])
-                # print(f'point_index: {point_index}, sector_points_dis: {sector_points_dis}, sector_points_qdr: {sector_points_qdr}')
+                # point(f'point_index: {point_index}, sector_points_dis: {sector_points_dis}, sector_points_qdr: {sector_points_qdr}')
                 sector_points_distance.append(sector_points_dis * RLtools.constants.NM2KM)
 
                 drift = bs.traf.hdg[ac_idx] - sector_points_qdr
@@ -460,7 +398,7 @@ class DeployRL(core.Entity):
         # print(f'self.obstacle_radius length is: {len(self.obstacle_radius)}')
         # if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
         #     print(f'observation: {observation}')
-        if self.env_name in ('staticobstaclesectorcrenv-v0'):
+        if self.env_name in ('STATICOBSTACLESECTORCRENV-V0'):
             observation = {
                     "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
                     "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
@@ -480,7 +418,7 @@ class DeployRL(core.Entity):
                     "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
                     "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
                 }
-        if self.env_name in ('staticobstaclesectorenv-v0'):
+        if self.env_name in ('STATICOBSTACLESECTORENV-V0'):
             observation = {
                     "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
@@ -495,7 +433,7 @@ class DeployRL(core.Entity):
                     "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
                     "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
                 }
-        if self.env_name in ('staticobstaclecrenv-v0'):
+        if self.env_name in ('STATICOBSTACLECRENV-V0'):
             observation = {
                     "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
                     "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
@@ -511,7 +449,7 @@ class DeployRL(core.Entity):
                     "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                     "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
                 }
-        if self.env_name in ('staticobstacleenv-v0'):
+        if self.env_name in ('STATICOBSTACLEENV-V0'):
             observation = {
                     "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),

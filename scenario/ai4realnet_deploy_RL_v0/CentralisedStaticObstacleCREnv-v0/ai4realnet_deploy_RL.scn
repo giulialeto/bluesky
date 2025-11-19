@@ -1,0 +1,44 @@
+#-------------------------------------------------------------------------------
+#   AI4REALNET D1.3 BlueSky scenario for testing the RL models on realistic data
+#   Env: CentralisedStaticObstacleCREnv-v0
+#   Authors: Giulia Leto
+#-------------------------------------------------------------------------------
+# Start sim at full speed
+#00:00:00.00>OP
+#00:00:00.00>DTMULT 5000
+
+#-------------------------------------------------------------------------------
+#   Pan and zoom in on area, disable visible waypoints and airports
+#-------------------------------------------------------------------------------
+00:00:00.00>PAN 45.5 0
+00:00:00.00>ZOOM 0.03
+
+00:00:00.00> showapt 0
+00:00:00.00> showwpt 0
+00:00:00.00> LABEL 0
+
+00:00:00.00>TRAIL ON
+00:00:00.00>TAXI OFF 1000
+
+#-------------------------------------------------------------------------------
+#   Creates polygons for the Lisbon FIR
+#-------------------------------------------------------------------------------
+00:00:00.00> PCALL ai4realnet_deploy_RL_v0/sector.scn
+
+#-------------------------------------------------------------------------------
+#   Creates polygons for the restricted areas
+#-------------------------------------------------------------------------------
+00:00:00.00> PCALL ai4realnet_deploy_RL_v0/CentralisedStaticObstacleCREnv-v0/restricted_areas-sample.scn
+
+#-------------------------------------------------------------------------------
+#   Load aircraft origin and destinations
+#-------------------------------------------------------------------------------
+00:00:00.00> PCALL ai4realnet_deploy_RL_v0/CentralisedStaticObstacleCREnv-v0/flights-sample.scn
+
+#-------------------------------------------------------------------------------
+#   Load the "DEPLOY_RL_CentralisedStaticObstacleSectorCREnv" plugin
+#   - select which model to run
+#   - reads the simulation state
+#   - trained RL model issues speed/heading changes to aircraft
+#-------------------------------------------------------------------------------
+00:00:00.00>PLUGIN DEPLOY_RL_CentralisedStaticObstacleCREnv
