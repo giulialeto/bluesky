@@ -107,4 +107,6 @@ bluesky/plugins/fazlur
 # scripted automation plugin required library
 bluesky/plugins/ai4realnet_scripted_automation_src/larp/
 # rl deployment plugin models
-bluesky/plugins/ai4realnet_deploy_RL_tools/models/
+bluesky/plugins/ai4realnet_deploy_RL_models/
+plugins/SingleAgentCR.py
+plugins/SingleAgentCRTools
