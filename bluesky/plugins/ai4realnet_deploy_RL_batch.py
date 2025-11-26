@@ -11,8 +11,14 @@ from stable_baselines3 import SAC, TD3, PPO, DDPG
 import numpy as np
 import pandas as pd
 import os, datetime
+from pathlib import Path
 
 # Global variables
+PLUGIN_DIR = Path(__file__).resolve().parent
+MODELS_DIR = PLUGIN_DIR / "ai4realnet_deploy_RL_models"
+
+# print(f"Current directory is {os.getcwd()}.")
+
 sector_name = 'LISBON_FIR'
 save_dir = 'ai4realnet_deploy_RL_batch/generated_scenarios'
 
@@ -127,18 +133,35 @@ class DeployRL(core.Entity):
 
         # Load the RL model 
         if self.algorithm.lower() in ('sac'):
-            self.model = SAC.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            self.model = SAC.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
         elif self.algorithm.lower() in ('td3'):
-            self.model = TD3.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            self.model = TD3.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
         elif self.algorithm.lower() in ('ppo'):
-            self.model = PPO.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            self.model = PPO.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
         elif self.algorithm.lower() in ('ddpg'):
-            self.model = DDPG.load(f"bluesky/plugins/ai4realnet_deploy_RL_models/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+            self.model = DDPG.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
 
         # logging
         self.log_buffer = []   # temporary storage
-        self.csv_file = (f"output/ai4realnet_deploy_RL_batch_{self.env_name}_{self.algorithm}_log.csv")
+        current_working_dir = os.getcwd()
+       
+        # print(f'Current working dir is: {current_working_dir}')
+
+        if  Path(os.getcwd()).name == 'ai4realnet-orchestrators':
+            
+            marker_path = Path(f'{current_working_dir}/ai4realnet_orchestrators/atm/current_scenfile.txt')
+
+            scenfile = marker_path.read_text().strip()
+            stack.stack(f'ECHO Loaded scenario file: {scenfile}')
+            scenario_id = Path(scenfile).stem
+            stack.stack(f'ECHO Scenario base name: {scenario_id}')
+
+            self.csv_file = (f"{current_working_dir}/ai4realnet_orchestrators/atm/output/{scenario_id}_log.csv")
+        else:
+            self.csv_file = (f"output/ai4realnet_deploy_RL_batch_{self.env_name}_{self.algorithm}_log.csv")
+        
         # print(f'self.env_name: {self.env_name}, self.algorithm: {self.algorithm}, number_aircraft: {self.number_aircraft}, number_obstacles: {self.number_obstacles}')
+        # print(f'self.csv_file: {self.csv_file}')
 
         if self.env_name in ('staticobstaclesectorcrenv-v0'):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
@@ -548,4 +571,3 @@ class DeployRL(core.Entity):
         stack.stack(f"HDG {id} {heading_new}")
         stack.stack(f"SPD {id} {speed_new}")
         # print(f'Action for aircraft {id} - traf.hdg: {traf.hdg[ac_idx]} -> {heading_new} with dh {dh}, traf.cas: {traf.cas[ac_idx]} m/s -> {speed_new/RLtools.constants.MpS2Kt} with dv {dv} m/s')
-
