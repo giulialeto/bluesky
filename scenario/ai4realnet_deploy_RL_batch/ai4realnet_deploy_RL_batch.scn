@@ -24,6 +24,9 @@
 00:00:00.00> perturbation volcanic on
 # deploy_RL <ENVIRONMENT>, <ALGORITHM>
 00:00:00.00> deploy_RL StaticObstacleEnv-v0 SAC
+# 00:00:00.00> deploy_RL StaticObstacleCREnv-v0 SAC
+# 00:00:00.00> deploy_RL StaticObstacleSectorEnv-v0 SAC
+# 00:00:00.00> deploy_RL StaticObstacleSectorCREnv-v0 SAC
 00:00:00.00>OP
 00:00:00.00>DTMULT 5000
 # repeats <N_SCN>
