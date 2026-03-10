@@ -116,8 +116,8 @@ class CR(core.Entity):
             altitude = traf.alt[ac_idx]
             cas_min, cas_max = fn.get_speed_limits_at_altitude(altitude)
 
-            vy = np.cos(np.deg2rad(ac_hdg)) * traf.gs[ac_idx]
-            vx = np.sin(np.deg2rad(ac_hdg)) * traf.gs[ac_idx]
+            vx = np.cos(np.deg2rad(ac_hdg)) * traf.gs[ac_idx]
+            vy = np.sin(np.deg2rad(ac_hdg)) * traf.gs[ac_idx]
 
             # Get destination information
             ac_dest_lat = traf.ap.route[ac_idx].wplat[-1]
