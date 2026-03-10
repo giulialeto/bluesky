@@ -18,6 +18,8 @@ from pathlib import Path
 import networkx as nx
 import bluesky.plugins.ai4realnet_deploy_baseline_tools_batch.deterministic_path_planning as path_plan
 from bluesky.tools.aero import kts
+import bluesky.plugins.CRTools as CRT ### IF comparing with my model, the update step should be the same
+
 
 # Global variables
 PLUGIN_DIR = Path(__file__).resolve().parent
@@ -240,7 +242,7 @@ class DeployBaseline(core.Entity):
         """
         self.total = self.repeats = repetitions
         
-    @core.timed_function(name='update', dt=Baselinetools.constants.ACTION_FREQUENCY)
+    @core.timed_function(name='update', dt=CRT.constants.TIMESTEP)
     def update(self):
         if self.start_updates == False:
             return
@@ -269,24 +271,24 @@ class DeployBaseline(core.Entity):
                 continue  # skip action if the aircraft has reached its destination
             obs = self._get_obs(ac_idx)
 
-            if self.plan_path:
-                if self.algorithm.lower() not in ('rein_weston'):
-                    G = Baselinetools.functions.build_graph_from_edges(obs)
-                    start = (bs.traf.lat[ac_idx], bs.traf.lon[ac_idx])
-                    goal  = (bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
+            # if self.plan_path:
+            if self.algorithm.lower() not in ('rein_weston'):
+                G = Baselinetools.functions.build_graph_from_edges(obs)
+                start = (bs.traf.lat[ac_idx], bs.traf.lon[ac_idx])
+                goal  = (bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
 
-                    path = Baselinetools.functions.astar_route(G, start, goal)
-                    # import debug
-                    # debug.pink(f"A* path: {path}")
+                path = Baselinetools.functions.astar_route(G, start, goal)
+                # import debug
+                # debug.pink(f"A* path: {path}")
 
-                if self.algorithm.lower() in ('rein_weston'):
-                    # import debug
-                    # debug.pink(f'obs for path planning: {obs}')
-                    self.planned_path = []
-                    self._path_planning(ac_idx)
+            if self.algorithm.lower() in ('rein_weston'):
+                # import debug
+                # debug.pink(f'obs for path planning: {obs}')
+                # self.planned_path = []
+                self._path_planning(ac_idx)
 
-            if ac_idx == self.number_aircraft - 1:
-                self.plan_path = False
+            # if ac_idx == self.number_aircraft - 1:
+            #     self.plan_path = False
 
             #### INSERT HERE PATH PLANNING ALGORITHM TO COMPUTE WAYPOINTS BASED ON THE GRAPH for the a* or other graph-based path planning
             # action = 
@@ -346,14 +348,15 @@ class DeployBaseline(core.Entity):
         # planned_path_other_aircraft = path_plan.det_path_planning(obj1[ac_idx], obj2[ac_idx], obj3[ac_idx], obj4[ac_idx]/kts, obj5[i+1], obj6[i+1], obj7)
         '''END used for debugging'''
 
-        self.planned_path.append(planned_path)
+        # self.planned_path.append(planned_path)
+        # remove previously added waypoints for this aircraft except the destination waypoint
+        for element in traf.ap.route[ac_idx].wpname:
+            if element != traf.ap.route[ac_idx].wpname[-1]:  # keep the destination waypoint
+                stack.stack(f"DELWPT {bs.traf.id[ac_idx]} {element}")
 
-        idx_wp = 0
-        for element in planned_path:
-            if idx_wp != 0:
-                bs.stack.stack(f"ADDWPT {bs.traf.id[ac_idx]} {element[0]} {element[1]}")
+        for element in planned_path[1:-1]:  # skip the first and last point as they correspond to the current position and the destination waypoint
+            bs.stack.stack(f"ADDWPT {bs.traf.id[ac_idx]} {element[0]} {element[1]}")
             # debug.green(f"Added waypoint {element} for aircraft {bs.traf.id[ac_idx]}")
-            idx_wp += 1
             
     def _get_obs(self, ac_idx):
         """

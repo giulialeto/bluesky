@@ -33,9 +33,27 @@ class CR(core.Entity):
         self.model.set_test(True)
         with traf.settrafarrays():
             traf.target_heading = np.array([])
+        self.active = False
+
+    def reset(self):
+        self.active = False
+
+    @stack.command(name='CR')
+    def set_active(self, state: str):
+        """Activate or deactivate CR.
+
+        Args:
+            state (str): 'ON' or 'OFF'.
+        """
+        if state.upper() == 'ON':
+            self.active = True
+        elif state.upper() == 'OFF':
+            self.active = False
 
     @core.timed_function(name='CR', dt=CRT.constants.TIMESTEP)
     def update(self):
+        if not self.active:
+            return
         if len(traf.id) > 0:
             observations = self._get_obs()
             obs_array = np.array(list(observations.values()))
@@ -79,12 +97,11 @@ class CR(core.Entity):
             idx_next_wp = traf.ap.route[ac_idx].iactwp
             target_hdg, _ = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], traf.ap.route[ac_idx].wplat[idx_next_wp], traf.ap.route[ac_idx].wplon[idx_next_wp])
             import debug
-            debug.pink(f'Target heading for {id} is {target_hdg}')
             debug.blue(f'Current heading for {id} is {ac_hdg}')
+            debug.pink(f'Target heading for {id} is {target_hdg}')
             debug.green(f'traf.lat[ac_idx]: {traf.lat[ac_idx]}, traf.lon[ac_idx]: {traf.lon[ac_idx]}')
             debug.red(f'traf.ap.route[ac_idx].wplat: {traf.ap.route[ac_idx].wplat}, traf.ap.route[ac_idx].wplon: {traf.ap.route[ac_idx].wplon}')
-            debug.black(f'traf.ap.route[ac_idx].wplat[traf.ap.route[ac_idx].iactwp]: {traf.ap.route[ac_idx].wplat[idx_next_wp]}')
-            debug.black(f'traf.ap.route[ac_idx].wplon[traf.ap.route[ac_idx].iactwp]: {traf.ap.route[ac_idx].wplon[traf.ap.route[ac_idx].iactwp]}')
+            debug.black(f'traf.ap.route[ac_idx].wpname[idx_next_wp]: {traf.ap.route[ac_idx].wpname[idx_next_wp]}')
 
             drift = ac_hdg - target_hdg
             drift = fn.bound_angle_positive_negative_180(drift)
