@@ -354,7 +354,8 @@ class DeployBaseline(core.Entity):
             if element != traf.ap.route[ac_idx].wpname[-1]:  # keep the destination waypoint
                 stack.stack(f"DELWPT {bs.traf.id[ac_idx]} {element}")
 
-        for element in planned_path[1:-1]:  # skip the first and last point as they correspond to the current position and the destination waypoint
+        # for element in planned_path[1:-1]:  # skip the first and last point as they correspond to the current position and the destination waypoint
+        for element in planned_path[1:]:  # skip the first and last point as they correspond to the current position and the destination waypoint
             bs.stack.stack(f"ADDWPT {bs.traf.id[ac_idx]} {element[0]} {element[1]}")
             # debug.green(f"Added waypoint {element} for aircraft {bs.traf.id[ac_idx]}")
             
@@ -387,54 +388,54 @@ class DeployBaseline(core.Entity):
             # print(f'sector points: {self.sector_points}, shape: {np.array(self.sector_points).shape}, type: {type(self.sector_points)}')
             # coordinates = ", ".join([f"{lat} {lon}" for lat, lon in self.sector_points])
             # stack.stack(f"POLY SECTOR_OBSERVATION, {coordinates}")
-            self.obstacle_vertices = []
-            # self.obstacle_centre_lon = []
-            # self.obstacle_radius = []
-
-            self.number_obstacles = 0
-            for shape_name, shape in tools.areafilter.basic_shapes.items():
-                if shape_name != sector_name:
-                # if shape_name != sector_name and shape_name != 'WEATHER_CELL' and shape_name != 'VOLCANIC_CELL':
-                    self.number_obstacles += 1
-                    # print(f'Processing obstacle: {shape_name}')
-                    coordinates = shape.coordinates
-
-                    self.edges = []
-                    i_point = 0
-                    for point in zip(coordinates[::2], coordinates[1::2]):
-
-                        i_point += 1
-                        # print(f'Processing sector point {i_point} with coordinates: {point}')
-                        # print(f"Point: {point[0]}, {point[1]} type: {type(point[0])}, {type(point[1])}")
-                        _, orig2node_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], point[0], point[1])
-                        self.edges.append(((bs.traf.lat[ac_idx], bs.traf.lon[ac_idx]), point, 1, orig2node_distance))
-                        edge = self.edges[-1]
-
-                        # if self.init_aircraft == 9:
-                        #     stack.stack(f"LINE {shape_name}_{ac_idx}_O_{i_point} {edge[0][0]} {edge[0][1]} {edge[1][0]} {edge[1][1]}")
-
-                        _, dest2node_distance = bs.tools.geo.kwikqdrdist(bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1], point[0], point[1])
-                        self.edges.append(((bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1]), point, 1, dest2node_distance))
-
-                        # stack.echo(f'Obstacle {shape_name} orig pair coordinates: {self.edges}')
-                        edge = self.edges[-1]
-                        
-                        # if self.init_aircraft == 9:
-                        #     stack.stack(f"LINE {shape_name}_{ac_idx}_D_{i_point} {edge[0][0]} {edge[0][1]} {edge[1][0]} {edge[1][1]}")
-
-                    coordinates = list(zip(coordinates[::2], coordinates[1::2]))
-                    # debug.cyan(f'Obstacle {shape_name} coordinates (lat, lon): {coordinates}')
-
-            #         (lat_c, lon_c), radius = RLtools.functions.bounding_circle_geodesic(coordinates)
-                    self.obstacle_vertices.append(coordinates)
-            #         self.obstacle_centre_lon.append(lon_c)
-            #         self.obstacle_radius.append(radius)
             
             # self.max_obstacle_radius = max(self.obstacle_radius)
             if self.init_aircraft == 0:
                 self.initialise_observation_flag = False
                 self.initial_observation_done = True
 
+        self.obstacle_vertices = []
+        # self.obstacle_centre_lon = []
+        # self.obstacle_radius = []
+
+        self.number_obstacles = 0
+        for shape_name, shape in tools.areafilter.basic_shapes.items():
+            if shape_name != sector_name:
+            # if shape_name != sector_name and shape_name != 'WEATHER_CELL' and shape_name != 'VOLCANIC_CELL':
+                self.number_obstacles += 1
+                # print(f'Processing obstacle: {shape_name}')
+                coordinates = shape.coordinates
+
+                self.edges = []
+                i_point = 0
+                for point in zip(coordinates[::2], coordinates[1::2]):
+
+                    i_point += 1
+                    # print(f'Processing sector point {i_point} with coordinates: {point}')
+                    # print(f"Point: {point[0]}, {point[1]} type: {type(point[0])}, {type(point[1])}")
+                    _, orig2node_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], point[0], point[1])
+                    self.edges.append(((bs.traf.lat[ac_idx], bs.traf.lon[ac_idx]), point, 1, orig2node_distance))
+                    edge = self.edges[-1]
+
+                    # if self.init_aircraft == 9:
+                    #     stack.stack(f"LINE {shape_name}_{ac_idx}_O_{i_point} {edge[0][0]} {edge[0][1]} {edge[1][0]} {edge[1][1]}")
+
+                    _, dest2node_distance = bs.tools.geo.kwikqdrdist(bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1], point[0], point[1])
+                    self.edges.append(((bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1]), point, 1, dest2node_distance))
+
+                    # stack.echo(f'Obstacle {shape_name} orig pair coordinates: {self.edges}')
+                    edge = self.edges[-1]
+                    
+                    # if self.init_aircraft == 9:
+                    #     stack.stack(f"LINE {shape_name}_{ac_idx}_D_{i_point} {edge[0][0]} {edge[0][1]} {edge[1][0]} {edge[1][1]}")
+
+                coordinates = list(zip(coordinates[::2], coordinates[1::2]))
+                # debug.cyan(f'Obstacle {shape_name} coordinates (lat, lon): {coordinates}')
+
+        #         (lat_c, lon_c), radius = RLtools.functions.bounding_circle_geodesic(coordinates)
+                self.obstacle_vertices.append(coordinates)
+        #         self.obstacle_centre_lon.append(lon_c)
+        #         self.obstacle_radius.append(radius)
 
         # destination waypoint
         # wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])

@@ -21,8 +21,8 @@
 00:00:00.00>PLUGIN CR
 # initialize_scenario <N_AC>, <N_OBSTACLES>
 00:00:00.00> initialize_scenario 10, 5
-# 00:00:00.00> perturbation weather on
-# 00:00:00.00> perturbation volcanic on
+00:00:00.00> perturbation weather on
+00:00:00.00> perturbation volcanic on
 # deploy_RL <ENVIRONMENT>, <ALGORITHM>
 00:00:00.00> deploy_Baseline StaticObstacleCREnv-v0 rein_weston
 00:00:00.00> CR ON
