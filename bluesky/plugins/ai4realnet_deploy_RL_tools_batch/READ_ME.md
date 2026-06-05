@@ -22,9 +22,9 @@ Groot, D. Janthony and Leto, Giulia and Vlaskin, Aleksandr and Moec, Adam and El
 ## Features
 The following environments are supported:
 - StaticObstacleEnv-v0
-- StaticObstacleCREnv-v0
+- StaticObstacleCREnv-v1
 - StaticObstacleSectorEnv-v0
-- StaticObstacleSectorCREnv-v0
+- StaticObstacleSectorCREnv-v1
 
 Models supported are:
 - SAC
