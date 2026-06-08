@@ -6,7 +6,7 @@ import bluesky.plugins.CommonTools.functions as fn
 from bluesky.plugins.ai4realnet_deploy_baseline_tools_batch.constants import NM2KM, MpS2Kt
 import torch
 
-MIN_DIST_CORR = False
+MIN_DIST_CORR = True
 MIN_DIST = 45 #NM
 
 def init_plugin():
@@ -70,7 +70,10 @@ class CR(core.Entity):
                     dist = dist[dist>0]
                     # 
                     if (dist.size == 0 or min(dist) > MIN_DIST):
-                        stack.stack(f"HDG {id} {traf.target_heading[idx]}")
+                        # Two options here: either turn on LNAV and VNAV to follow the flight plan (from the path planning module), or give directly the target heading in the heading select mode (which should hold the speed constant as well).
+                        stack.stack(f"LNAV {id} ON")
+                        stack.stack(f"VNAV {id} ON")
+                        # stack.stack(f"HDG {id} {traf.target_heading[idx]}")
                     else:
                         self._set_action(action,idx)
                 else:
@@ -95,15 +98,15 @@ class CR(core.Entity):
             ac_hdg = traf.hdg[ac_idx]
     
             idx_next_wp = traf.ap.route[ac_idx].iactwp
-            target_hdg, _ = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], traf.ap.route[ac_idx].wplat[idx_next_wp], traf.ap.route[ac_idx].wplon[idx_next_wp])
-            import debug
-            debug.blue(f'Current heading for {id} is {ac_hdg}')
-            debug.pink(f'Target heading for {id} is {target_hdg}')
-            debug.green(f'traf.lat[ac_idx]: {traf.lat[ac_idx]}, traf.lon[ac_idx]: {traf.lon[ac_idx]}')
-            debug.red(f'traf.ap.route[ac_idx].wplat: {traf.ap.route[ac_idx].wplat}, traf.ap.route[ac_idx].wplon: {traf.ap.route[ac_idx].wplon}')
-            debug.black(f'traf.ap.route[ac_idx].wpname[idx_next_wp]: {traf.ap.route[ac_idx].wpname[idx_next_wp]}')
+            traf.target_heading[ac_idx], _ = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], traf.ap.route[ac_idx].wplat[idx_next_wp], traf.ap.route[ac_idx].wplon[idx_next_wp])
+            # import debug
+            # debug.blue(f'Current heading for {id} is {ac_hdg}')
+            # debug.pink(f'Target heading for {id} is {target_hdg}')
+            # debug.green(f'traf.lat[ac_idx]: {traf.lat[ac_idx]}, traf.lon[ac_idx]: {traf.lon[ac_idx]}')
+            # debug.red(f'traf.ap.route[ac_idx].wplat: {traf.ap.route[ac_idx].wplat}, traf.ap.route[ac_idx].wplon: {traf.ap.route[ac_idx].wplon}')
+            # debug.black(f'traf.ap.route[ac_idx].wpname[idx_next_wp]: {traf.ap.route[ac_idx].wpname[idx_next_wp]}')
 
-            drift = ac_hdg - target_hdg
+            drift = ac_hdg - traf.target_heading[ac_idx]
             drift = fn.bound_angle_positive_negative_180(drift)
             cos_drift = np.cos(np.deg2rad(drift))
             sin_drift = np.sin(np.deg2rad(drift))
@@ -153,6 +156,8 @@ class CR(core.Entity):
     def _set_action(self, action, idx):
         dh = action[0] * CRT.constants.D_HEADING
         dv = action[1] * CRT.constants.D_VELOCITY
+
+        # stack.echo(f"CR action for {traf.id[idx]}: dh={dh}, dv={dv}")
         heading_new = fn.bound_angle_positive_negative_180(traf.hdg[idx] + dh)
         speed_new = (traf.cas[idx] + dv)
         
@@ -160,9 +165,7 @@ class CR(core.Entity):
         altitude = traf.alt[idx]
         speed_new = fn.get_speed_at_altitude(altitude,speed_new) * MpS2Kt
 
-        # import code
-        # code.interact(local=locals())
-
         id = traf.id[idx]
+        # stack.stack(f"LNAV {id} OFF") # this is not needed, because the heading and speed select already turn off LNAV and VNAV
         stack.stack(f"HDG {id} {heading_new}")
         stack.stack(f"SPD {id} {speed_new}")
