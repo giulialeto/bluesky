@@ -163,7 +163,7 @@ class DeployRL(core.Entity):
         # print(f'self.env_name: {self.env_name}, self.algorithm: {self.algorithm}, number_aircraft: {self.number_aircraft}, number_obstacles: {self.number_obstacles}')
         # print(f'self.csv_file: {self.csv_file}')
 
-        if self.env_name in ('staticobstaclesectorcrenv-v0'):
+        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorcrenv-v1'):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
             # Model parameters
             self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
@@ -176,7 +176,6 @@ class DeployRL(core.Entity):
 
             self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
             self.DISTANCE_MARGIN = 5 # km
-
         if self.env_name in ('staticobstaclesectorenv-v0'):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
             # Model parameters
@@ -189,7 +188,7 @@ class DeployRL(core.Entity):
 
             self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
             self.DISTANCE_MARGIN = 5 # km
-        if self.env_name in ('staticobstaclecrenv-v0'):
+        if self.env_name in ('staticobstaclecrenv-v0', 'staticobstaclecrenv-v1'):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
             # Model parameters
             self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
@@ -200,7 +199,6 @@ class DeployRL(core.Entity):
 
             self.ACTION_FREQUENCY = 10
             self.DISTANCE_MARGIN = 5 # km
-
         if self.env_name in ('staticobstacleenv-v0'):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
             # Model parameters
@@ -299,7 +297,7 @@ class DeployRL(core.Entity):
             # Scaling factor for the distances in the observation vector
             self.waypoint_distance_max = max(waypoint_distances)
 
-            if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0'):
+            if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0', 'staticobstaclesectorcrenv-v1'):
                 sector = tools.areafilter.basic_shapes[sector_name]
                 coordinates = sector.coordinates
                 latitudes = coordinates[::2]
@@ -425,7 +423,7 @@ class DeployRL(core.Entity):
             obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=0.0)
 
 
-        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclecrenv-v0'):
+        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclecrenv-v0', 'staticobstaclesectorcrenv-v1', 'staticobstaclecrenv-v1'):
             # intruder observation
             intruders_lat = np.delete(bs.traf.lat, ac_idx)
             intruders_lon = np.delete(bs.traf.lon, ac_idx)
@@ -462,7 +460,7 @@ class DeployRL(core.Entity):
                 intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
                 intruder_y_difference_speed =  np.pad(intruder_y_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
 
-        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0'):
+        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0', 'staticobstaclesectorcrenv-v1'):
             # sector polygon edges observation
             sector_points_distance = []
             sector_points_cos_drift = []
@@ -483,7 +481,7 @@ class DeployRL(core.Entity):
         # print(f'self.obstacle_radius length is: {len(self.obstacle_radius)}')
         # if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
         #     print(f'observation: {observation}')
-        if self.env_name in ('staticobstaclesectorcrenv-v0'):
+        if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorcrenv-v1'):
             observation = {
                     "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
                     "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
@@ -518,7 +516,7 @@ class DeployRL(core.Entity):
                     "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
                     "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
                 }
-        if self.env_name in ('staticobstaclecrenv-v0'):
+        if self.env_name in ('staticobstaclecrenv-v0', 'staticobstaclecrenv-v1'):
             observation = {
                     "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
                     "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
