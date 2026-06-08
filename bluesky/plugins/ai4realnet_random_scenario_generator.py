@@ -111,8 +111,8 @@ class ScenarioGenerator(core.Entity):
         obstacle_dict = {}  # Initialize the dictionary to store obstacles for overlap checking
 
         for i in range(num_obstacles):
-            centre_obst = (self.obstacle_centre_lat[i], self.obstacle_centre_lon[i])
-            _, p, R = self._generate_polygon(centre_obst)
+            centre_obst = (self.obstacle_centre_lat[i], self.obstacle_centre_lon[i]) # lat/lon 
+            _, p, R = self._generate_polygon(centre_obst) # vertices of the polygon in lat/lon coordinates, and radius in NM
             
             # Ensure the polygon is closed
             if not np.allclose(p[0], p[-1]):
@@ -188,10 +188,16 @@ class ScenarioGenerator(core.Entity):
             # Find observation points for sector
 
     def _generate_polygon(self, centre):
+        """Generate a random polygon around a centre point with an area within the specified range.
+        Args:
+            centre (tuple): A tuple containing the latitude and longitude of the centre point (lat, lon).
+            Returns:
+                tuple: A tuple containing the area of the polygon (NM^2), the vertices of the polygon (lat, lon), and the radius (NM).
+        """
         OBSTACLE_AREA_RANGE = (1000, 10000) # In NM^2
 
-        poly_area = np.random.randint(OBSTACLE_AREA_RANGE[0]*2, OBSTACLE_AREA_RANGE[1])
-        R = np.sqrt(poly_area/ np.pi)
+        poly_area = np.random.randint(OBSTACLE_AREA_RANGE[0]*2, OBSTACLE_AREA_RANGE[1]) #NM^2
+        R = np.sqrt(poly_area/ np.pi) # NM
         p = [functions.random_point_on_circle(R) for _ in range(3)] # 3 random points to start building the polygon
         p = functions.sort_points_clockwise(p)
         p_area = functions.polygon_area(p)
@@ -200,8 +206,7 @@ class ScenarioGenerator(core.Entity):
             p.append(functions.random_point_on_circle(R))
             p = functions.sort_points_clockwise(p)
             p_area = functions.polygon_area(p)
-        
-        p = [functions.nm_to_latlong(centre, point) for point in p] # Convert to lat/long coordinateS
+        p = [functions.nm_to_latlong(centre, point) for point in p] # Convert to lat/long coordinates
         
         return p_area, p, R
 
