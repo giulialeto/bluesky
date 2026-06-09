@@ -23,8 +23,11 @@
 00:00:00.00> initialize_scenario 10, 5
 00:00:00.00> perturbation weather on
 00:00:00.00> perturbation volcanic on
-# deploy_RL <ENVIRONMENT>, <ALGORITHM>
+# deploy_Baseline <ENVIRONMENT>, <ALGORITHM>
 00:00:00.00> deploy_Baseline StaticObstacleCREnv-v0 rein_weston
+00:00:00.00> BUFFER on
+00:00:00.00> ASAS ON
+00:00:00.00> SHOWPZ ON
 00:00:00.00> CR ON
 00:00:00.00>OP
 00:00:00.00>DTMULT 5000

@@ -7,6 +7,7 @@ from multiprocessing.util import debug
 from os import path
 
 from bluesky import core, stack, traf, tools, settings 
+from bluesky.plugins.ai4realnet_deploy_baseline_tools_batch.functions import closest_point_on_polygon
 from bluesky.stack.simstack import readscn
 import bluesky as bs
 import bluesky.plugins.ai4realnet_deploy_baseline_tools_batch as Baselinetools
@@ -48,14 +49,15 @@ class DeployBaseline(core.Entity):
     def __init__(self):
         super().__init__()
 
-        self.start_next = True
-        self.repeats = 0
-        self.total = 0
+        self.start_next = True # Flag to indicate whether to start the next scenario batch, set to True at the end of each scenario and to False after the first update loop of the next scenario batch
+        self.repeats = 0 # Number of repetitions left for the current batch scenario
+        self.total = 0 # Total number of repetitions, as specified in the scenario file
         self.scentime = []
         self.scencmd = []
-        self.start_updates = False
+        self.start_updates = False # Flag to indicate when to start the update loop, set to True after loading the scenario the first time, otherwise it would try to update the state before the aircraft are spawned
         self.max_sim_time = 3600  # seconds
         os.makedirs(f'scenario/{save_dir}', exist_ok=True)
+        # self.add_buffer = False
 
     def reset(self):
         pass
@@ -103,8 +105,6 @@ class DeployBaseline(core.Entity):
                 continue
             new_scentime.append(plugin_time)
             new_scencmd.append(plugin_cmd)
-
-        self.start_next = True
         
         self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -118,8 +118,8 @@ class DeployBaseline(core.Entity):
                 parts = [p.strip() for p in args.split(",")]
 
                 if len(parts) == 2:
-                    self.number_aircraft = int(parts[0])
-                    self.number_obstacles = int(parts[1])
+                    self.inital_number_aircraft = int(parts[0])
+                    self.initial_number_obstacles = int(parts[1])
                 else:
                     print("[DeployBaseline] ERROR: initialize_scenario must have exactly 2 arguments.")
 
@@ -141,16 +141,6 @@ class DeployBaseline(core.Entity):
         self.scentime = new_scentime
         self.scencmd  = new_scencmd
 
-        # Load the correct algorithn based on the scenario configuations
-        # if self.algorithm.lower() in ('sac'):
-        #     self.model = SAC.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        # elif self.algorithm.lower() in ('td3'):
-        #     self.model = TD3.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        # elif self.algorithm.lower() in ('ppo'):
-        #     self.model = PPO.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        # elif self.algorithm.lower() in ('ddpg'):
-        #     self.model = DDPG.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-
         # logging
         self.log_buffer = []   # temporary storage
         current_working_dir = os.getcwd()
@@ -158,7 +148,6 @@ class DeployBaseline(core.Entity):
         # print(f'Current working dir is: {current_working_dir}')
 
         if  Path(os.getcwd()).name == 'ai4realnet-orchestrators':
-            
             marker_path = Path(f'{current_working_dir}/ai4realnet_orchestrators/atm/current_scenfile.txt')
 
             scenfile = marker_path.read_text().strip()
@@ -171,59 +160,11 @@ class DeployBaseline(core.Entity):
             self.csv_file = (f"output/ai4realnet_deploy_baseline_batch_{self.env_name}_{self.algorithm}_log.csv")
         
         self.DISTANCE_MARGIN = 5 # km
-        # print(f'self.env_name: {self.env_name}, self.algorithm: {self.algorithm}, number_aircraft: {self.number_aircraft}, number_obstacles: {self.number_obstacles}')
-        # print(f'self.csv_file: {self.csv_file}')
-
-        # if self.env_name in ('staticobstaclesectorcrenv-v0'):
-        #     # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-        #     # Model parameters
-        #     self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
-        #     self.NUM_INTRUDERS = 5
-        #     self.AC_SPD = 150 # m/s
-        #     self.D_HEADING = 45 #degrees
-        #     self.D_SPEED = 20/3 # m/s
-
-        #     self.ACTION_FREQUENCY = 10
-
-        #     self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
-        #     self.DISTANCE_MARGIN = 5 # km
-
-        # if self.env_name in ('staticobstaclesectorenv-v0'):
-        #     # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-        #     # Model parameters
-        #     self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
-        #     self.AC_SPD = 150 # m/s
-        #     self.D_HEADING = 45 #degrees
-        #     self.D_SPEED = 20/3 # m/s
-
-        #     self.ACTION_FREQUENCY = 10
-
-        #     self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
-        #     self.DISTANCE_MARGIN = 5 # km
-        # if self.env_name in ('staticobstaclecrenv-v0'):
-        #     # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-        #     # Model parameters
-        #     self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
-        #     self.NUM_INTRUDERS = 5
-        #     self.AC_SPD = 150 # m/s
-        #     self.D_HEADING = 45 #degrees
-        #     self.D_SPEED = 20/3 # m/s
-
-        #     self.ACTION_FREQUENCY = 10
-        #     self.DISTANCE_MARGIN = 5 # km
-
-        # if self.env_name in ('staticobstacleenv-v0'):
-        #     # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
-        #     # Model parameters
-        #     self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
-        #     self.AC_SPD = 150 # m/s
-        #     self.D_HEADING = 45 #degrees
-        #     self.D_SPEED = 20/3 # m/s
-
-        #     self.ACTION_FREQUENCY = 10
-        #     self.DISTANCE_MARGIN = 5 # km
+        self.OBSTACLE_BUFFER_DISTANCE_NM = 5 # NM
 
         self.start_updates = True
+        self.delete_buffer_weather = True
+        self.delete_buffer_volcanic = True
         stack.process(f'OP')
         stack.process(f'DTMULT 5000')
 
@@ -244,36 +185,42 @@ class DeployBaseline(core.Entity):
         
     @core.timed_function(name='update', dt=CRT.constants.TIMESTEP)
     def update(self):
+        """ Update function called with frequency dt. """
+
         if self.start_updates == False:
             return
         
+        self._buffer_added_this_step = False # flag to ensure the buffer is only added once per update step, not for each aircraft
+
         if self.start_next and self.repeats >= 0:
             self.repeats -= 1
             self.scn_idx = self.total - self.repeats
             bs.sim.start_batch_scenario(f'batch_{self.scn_idx}', list(self.scentime), list(self.scencmd))
-            stack.stack(f'SAVEIC {save_dir}/{self.timestamp}_{self.env_name}_{self.algorithm}_{self.number_aircraft}_{self.number_obstacles}_{self.scn_idx}')
+            stack.stack(f'SAVEIC {save_dir}/{self.timestamp}_{self.env_name}_{self.algorithm}_{self.inital_number_aircraft}_{self.initial_number_obstacles}_{self.scn_idx}')
 
             self.start_next = False
-            self.initialise_observation_flag = True
-            self.init_aircraft = self.number_aircraft
-            self.initial_observation_done = False
-            self.plan_path = True
+            self.initialise_observation_flag = True # flag used to prevent the scenario from being quit when there are no aircraft in the scenario at the beginning, before the spawn command is executed
 
             stack.stack(f'ECHO Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}')
             print(f'Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}')
 
+        # path planning for each aircraft
         for ac_idx, id in enumerate(traf.id):
+            # stack.echo(f"Processing aircraft {id} at index {ac_idx}")
+            # stack.echo(f"Current position of aircraft {id}: lat={bs.traf.lat[ac_idx]}, lon={bs.traf.lon[ac_idx]}, alt={bs.traf.alt[ac_idx]}, tas={bs.traf.tas[ac_idx]}, hdg={bs.traf.hdg[ac_idx]}")
+            # check if the aircraft has reached its destination, if yes, delete it and skip the rest of the loop
             _, dest_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
             if dest_dis * Baselinetools.constants.NM2KM < self.DISTANCE_MARGIN:
                 # stack.stack(f"ECHO Aircraft {id} has reached the destination waypoint.")
-                # print(f"Aircraft {id} has reached the destination waypoint.")
                 stack.process(f"DELETE {id}")
                 continue  # skip action if the aircraft has reached its destination
-            obs = self._get_obs(ac_idx)
 
-            # if self.plan_path:
+            # Observation of the obstacles. Since volcanic and weather disturbances are present, the obstacle varies over time.
+            self._get_obs(ac_idx)
+
+            # Path planning
             if self.algorithm.lower() not in ('rein_weston'):
-                G = Baselinetools.functions.build_graph_from_edges(obs)
+                G = Baselinetools.functions.build_graph_from_edges(self.edges)
                 start = (bs.traf.lat[ac_idx], bs.traf.lon[ac_idx])
                 goal  = (bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
 
@@ -282,17 +229,7 @@ class DeployBaseline(core.Entity):
                 # debug.pink(f"A* path: {path}")
 
             if self.algorithm.lower() in ('rein_weston'):
-                # import debug
-                # debug.pink(f'obs for path planning: {obs}')
-                # self.planned_path = []
                 self._path_planning(ac_idx)
-
-            # if ac_idx == self.number_aircraft - 1:
-            #     self.plan_path = False
-
-            #### INSERT HERE PATH PLANNING ALGORITHM TO COMPUTE WAYPOINTS BASED ON THE GRAPH for the a* or other graph-based path planning
-            # action = 
-            # self._set_action(action, ac_idx)
 
         # --- logging ---
         simt = bs.sim.simt        # current sim time
@@ -309,12 +246,12 @@ class DeployBaseline(core.Entity):
             df.to_csv(self.csv_file, mode="a", index=False, header=not pd.io.common.file_exists(self.csv_file))
             self.log_buffer.clear()
 
-        if (traf.id == [] or simt > self.max_sim_time) and (self.repeats > 0) and (self.initial_observation_done):
+        if (traf.id == [] or simt > self.max_sim_time) and (self.repeats > 0) and (self.initialise_observation_flag == False):
             print(f'Ending scenario batch_{self.scn_idx}')
             stack.process('END_SCEN')
 
 
-        if (traf.id == [] or simt > self.max_sim_time) and (self.repeats == 0) and (self.initial_observation_done):
+        if (traf.id == [] or simt > self.max_sim_time) and (self.repeats == 0) and (self.initialise_observation_flag == False):
             print(f'Ending scenario batch_{self.scn_idx}')
             stack.process('QUIT')
 
@@ -341,344 +278,176 @@ class DeployBaseline(core.Entity):
         '''END used for debugging'''
 
         merged_obstacles_vertices = path_plan.merge_overlapping_obstacles(self.obstacle_vertices)
+
         planned_path = path_plan.det_path_planning(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.alt[ac_idx], bs.traf.tas[ac_idx]/kts, bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1], merged_obstacles_vertices)
 
-        '''used for debugging'''
-        # ac_idx = bs.traf.id2idx(obj0[i])
-        # planned_path_other_aircraft = path_plan.det_path_planning(obj1[ac_idx], obj2[ac_idx], obj3[ac_idx], obj4[ac_idx]/kts, obj5[i+1], obj6[i+1], obj7)
-        '''END used for debugging'''
-
-        # self.planned_path.append(planned_path)
         # remove previously added waypoints for this aircraft except the destination waypoint
         for element in traf.ap.route[ac_idx].wpname:
             if element != traf.ap.route[ac_idx].wpname[-1]:  # keep the destination waypoint
                 stack.stack(f"DELWPT {bs.traf.id[ac_idx]} {element}")
 
-        # for element in planned_path[1:-1]:  # skip the first and last point as they correspond to the current position and the destination waypoint
-        for element in planned_path[1:]:  # skip the first and last point as they correspond to the current position and the destination waypoint
+        for element in planned_path[1:-1]:  # skip the first and last point as they correspond to the current position and the destination waypoint
+        # for element in planned_path[1:]:  # skip the first and last point as they correspond to the current position and the destination waypoint
             bs.stack.stack(f"ADDWPT {bs.traf.id[ac_idx]} {element[0]} {element[1]}")
-            # debug.green(f"Added waypoint {element} for aircraft {bs.traf.id[ac_idx]}")
             
     def _get_obs(self, ac_idx):
         """
         Observation is the normalized. Normalisation logic should be studied further
-      """
-        if self.initialise_observation_flag:
-            # this logic is used when we want to generate the graph to feed to the path planning algorithm only once. otherwise, if the initialization flag is removed, the new path can be computed at every update time step
-            waypoint_distances = []
-
-            self.init_aircraft -= 1
-
-            # Give aircraft initial heading
-            for ac_idx_for_heading, _ in enumerate(traf.id):
-                _, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx_for_heading], traf.lon[ac_idx_for_heading], bs.traf.ap.route[ac_idx_for_heading].wplat[-1], bs.traf.ap.route[ac_idx_for_heading].wplon[-1])
-                waypoint_distances.append(initial_wpt_dist)
-
-            # # Scaling factor for the distances in the observation vector
-            # self.waypoint_distance_max = max(waypoint_distances)
-
-            # if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0'):
-            #     sector = tools.areafilter.basic_shapes[sector_name]
-            #     coordinates = sector.coordinates
-            #     latitudes = coordinates[::2]
-            #     longitudes = coordinates[1::2]
-            #     self.sector_points = RLtools.functions.resample_closed_border(latitudes, longitudes, self.TOTAL_OBSERVATION_POINTS)
-
-            # # Display in BlueSky the sector points contained in the observation 
-            # print(f'sector points: {self.sector_points}, shape: {np.array(self.sector_points).shape}, type: {type(self.sector_points)}')
-            # coordinates = ", ".join([f"{lat} {lon}" for lat, lon in self.sector_points])
-            # stack.stack(f"POLY SECTOR_OBSERVATION, {coordinates}")
-            
-            # self.max_obstacle_radius = max(self.obstacle_radius)
-            if self.init_aircraft == 0:
-                self.initialise_observation_flag = False
-                self.initial_observation_done = True
+        """
 
         self.obstacle_vertices = []
-        # self.obstacle_centre_lon = []
-        # self.obstacle_radius = []
+        self.shape_name = []
 
-        self.number_obstacles = 0
+        self.current_number_obstacles = 0
+        
+        self.edges = []
+
         for shape_name, shape in tools.areafilter.basic_shapes.items():
-            if shape_name != sector_name:
-            # if shape_name != sector_name and shape_name != 'WEATHER_CELL' and shape_name != 'VOLCANIC_CELL':
-                self.number_obstacles += 1
-                # print(f'Processing obstacle: {shape_name}')
+            # process coordinates for all the areas in basic shapes except the one corresponding to the sector (restricted areas + volcanic/weather disturbances)
+            if shape_name != sector_name and not shape_name.startswith("BUFFER_"):
+                self.current_number_obstacles += 1
                 coordinates = shape.coordinates
 
-                self.edges = []
-                i_point = 0
                 for point in zip(coordinates[::2], coordinates[1::2]):
 
-                    i_point += 1
-                    # print(f'Processing sector point {i_point} with coordinates: {point}')
-                    # print(f"Point: {point[0]}, {point[1]} type: {type(point[0])}, {type(point[1])}")
                     _, orig2node_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], point[0], point[1])
                     self.edges.append(((bs.traf.lat[ac_idx], bs.traf.lon[ac_idx]), point, 1, orig2node_distance))
-                    edge = self.edges[-1]
-
-                    # if self.init_aircraft == 9:
-                    #     stack.stack(f"LINE {shape_name}_{ac_idx}_O_{i_point} {edge[0][0]} {edge[0][1]} {edge[1][0]} {edge[1][1]}")
 
                     _, dest2node_distance = bs.tools.geo.kwikqdrdist(bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1], point[0], point[1])
                     self.edges.append(((bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1]), point, 1, dest2node_distance))
-
-                    # stack.echo(f'Obstacle {shape_name} orig pair coordinates: {self.edges}')
-                    edge = self.edges[-1]
                     
                     # if self.init_aircraft == 9:
                     #     stack.stack(f"LINE {shape_name}_{ac_idx}_D_{i_point} {edge[0][0]} {edge[0][1]} {edge[1][0]} {edge[1][1]}")
 
                 coordinates = list(zip(coordinates[::2], coordinates[1::2]))
-                # debug.cyan(f'Obstacle {shape_name} coordinates (lat, lon): {coordinates}')
 
-        #         (lat_c, lon_c), radius = RLtools.functions.bounding_circle_geodesic(coordinates)
+                self.shape_name.append(shape_name)
                 self.obstacle_vertices.append(coordinates)
-        #         self.obstacle_centre_lon.append(lon_c)
-        #         self.obstacle_radius.append(radius)
+            if shape_name.startswith("BUFFER_WEATHER_CELL"):
+                self.delete_buffer_weather = True
+            if shape_name.startswith("BUFFER_VOLCANIC_CELL"):
+                self.delete_buffer_volcanic = True
+        if self.add_buffer and not self._buffer_added_this_step: # only need to add the buffer once per update, not for each aircraft
+            self._add_buffer()
+        self.obstacle_vertices = self.buffered_obstacle_vertices
 
-        # destination waypoint
-        # wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
-    
-        # destination_waypoint_distance = wpt_dis * RLtools.constants.NM2KM
+        if self.initialise_observation_flag:
+            self.initialise_observation_flag = False
 
-        # drift = bs.traf.hdg[ac_idx] - wpt_qdr
-        # destination_waypoint_drift = RLtools.functions.bound_angle_positive_negative_180(drift)
-
-        # destination_waypoint_cos_drift = np.cos(np.deg2rad(destination_waypoint_drift))
-        # destination_waypoint_sin_drift = np.sin(np.deg2rad(destination_waypoint_drift))
-
-
-        ################# Insert here the logic for the construction of the graph for weather disturbances and volcanic disturbances.
-        ################# Insert here the logic for the construction of the graph for the restricted areas in case we want to re-plan at every update time step
-        # obstacles 
-        # obstacle_centre_distance = []
-        # obstacle_centre_cos_bearing = []
-        # obstacle_centre_sin_bearing = []
-
-        # for obs_idx in range(self.number_obstacles):
-            
-        #     obs_centre_qdr, obs_centre_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.obstacle_centre_lat[obs_idx], self.obstacle_centre_lon[obs_idx])
-        #     obs_centre_dis = obs_centre_dis * RLtools.constants.NM2KM #KM        
-        #     bearing = bs.traf.hdg[ac_idx] - obs_centre_qdr
-            
-        #     bearing = RLtools.functions.bound_angle_positive_negative_180(bearing)
-
-        #     obstacle_centre_distance.append(obs_centre_dis)
-        #     obstacle_centre_cos_bearing.append(np.cos(np.deg2rad(bearing)))
-        #     obstacle_centre_sin_bearing.append(np.sin(np.deg2rad(bearing)))
-
-        # weather disturbances
-        if bs.tools.areafilter.basic_shapes.get('WEATHER_CELL') is not None:
-            # print(f'Processing WEATHER_CELL obstacle for observation')
-            coordinates = bs.tools.areafilter.basic_shapes['WEATHER_CELL'].coordinates
-            # coordinates = list(zip(coordinates[::2], coordinates[1::2]))
-            # (weather_cell_center_lat, weather_cell_center_lon), weather_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates)
-            # weather_cell_centre_qdr, weather_cell_centre_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], weather_cell_center_lat, weather_cell_center_lon)
-            # weather_cell_centre_distance = weather_cell_centre_distance * RLtools.constants.NM2KM #KM            
-            # bearing = RLtools.functions.bound_angle_positive_negative_180(bs.traf.hdg[ac_idx] - weather_cell_centre_qdr)
-
-            # weather_cell_centre_cos_bearing = np.cos(np.deg2rad(bearing))
-            # weather_cell_centre_sin_bearing = np.sin(np.deg2rad(bearing))
-
-        # volcanic disturbances
-        if bs.tools.areafilter.basic_shapes.get('VOLCANIC_CELL') is not None:
-            # print(f'Processing VOLCANIC_CELL obstacle for observation')
-            coordinates = bs.tools.areafilter.basic_shapes['VOLCANIC_CELL'].coordinates
-            # coordinates = list(zip(coordinates[::2], coordinates[1::2]))
-            # (volcanic_cell_center_lat, volcanic_cell_center_lon), volcanic_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates)
-            # volcanic_cell_centre_qdr, volcanic_cell_centre_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], volcanic_cell_center_lat, volcanic_cell_center_lon)
-            # volcanic_cell_centre_distance = volcanic_cell_centre_distance * RLtools.constants.NM2KM #KM            
-            # bearing = RLtools.functions.bound_angle_positive_negative_180(bs.traf.hdg[ac_idx] - volcanic_cell_centre_qdr)
-
-            # volcanic_cell_centre_cos_bearing = np.cos(np.deg2rad(bearing))
-            # volcanic_cell_centre_sin_bearing = np.sin(np.deg2rad(bearing))
+    def _add_buffer(self):
+        """ Add a safety buffer around the obstacles by expanding their vertices outward by a specified distance. """
         
-        # obstacle_radius = self.obstacle_radius.copy()
+        # add buffer around obstacles at every time step, since the observation of the obstacles is updated at every time step to account for the volcanic and weather disturbances, which might appear/disappear/move during the scenario
+        self.buffered_obstacle_vertices = Baselinetools.functions.buffer_obstacles_nm(self.obstacle_vertices, self.OBSTACLE_BUFFER_DISTANCE_NM)
 
-        # Find the RLtools.constants.NUM_OBSTACLES closest obstacles to the ownship (restricted areas or weather cells)
-        # RLtools.constants.NUM_OBSTACLES depends on how many obstacles the AI has been trained with
-        if bs.tools.areafilter.basic_shapes.get('WEATHER_CELL') is not None:
-            # obstacle_centre_distance.append(weather_cell_centre_distance)
-            # obstacle_centre_cos_bearing.append(weather_cell_centre_cos_bearing)
-            # obstacle_centre_sin_bearing.append(weather_cell_centre_sin_bearing)
-            # obstacle_radius.append(weather_cell_radius)
-            pass
-        
-        if bs.tools.areafilter.basic_shapes.get('VOLCANIC_CELL') is not None:
-            # obstacle_centre_distance.append(volcanic_cell_centre_distance)
-            # obstacle_centre_cos_bearing.append(volcanic_cell_centre_cos_bearing)
-            # obstacle_centre_sin_bearing.append(volcanic_cell_centre_sin_bearing)
-            # obstacle_radius.append(volcanic_cell_radius)
-            pass
+        # Delete the buffered obstacles from the previous time step in case there is no more volcanic/weather disturbance in the scenario. 
+        if self.delete_buffer_weather:
+            if not any(shape_name.startswith("WEATHER_CELL") for shape_name, _ in tools.areafilter.basic_shapes.items()):
+                stack.process(f'DELETE BUFFER_WEATHER_CELL')
+                self.delete_buffer_weather = False
+        if self.delete_buffer_volcanic:
+            if not any(shape_name.startswith("VOLCANIC_CELL") for shape_name, _ in tools.areafilter.basic_shapes.items()):
+                stack.process(f'DELETE BUFFER_VOLCANIC_CELL')
+                self.delete_buffer_volcanic = False
 
-        # obstacle_centre_distance = np.array(obstacle_centre_distance)
-        # obstacle_centre_cos_bearing = np.array(obstacle_centre_cos_bearing)
-        # obstacle_centre_sin_bearing = np.array(obstacle_centre_sin_bearing)
-        # obstacle_radius = np.array(obstacle_radius)
-        
-        # # print(f'self.NUM_OBS: {self.NUM_OBSTACLES}')
-        # # select the closest RLtools.constants.NUM_OBSTACLES obstacles
-        # idx_sorted = np.argsort(obstacle_centre_distance)[:self.NUM_OBSTACLES]
-        
-        # obstacle_centre_distance = obstacle_centre_distance[idx_sorted]
-        # obstacle_centre_cos_bearing = obstacle_centre_cos_bearing[idx_sorted]
-        # obstacle_centre_sin_bearing = obstacle_centre_sin_bearing[idx_sorted]
-        # obstacle_radius = obstacle_radius[idx_sorted]
+        # Adding the buffered obstacles to BlueSky as POLY areas (ONLY ONCE for the restricted areas, continuously for the volcanic and weather cells)
+        for i, polygon in enumerate(self.buffered_obstacle_vertices):
 
-        # # padding if less than RLtools.constants.NUM_OBSTACLES are present
-        # num_missing = self.NUM_OBSTACLES - obstacle_centre_distance.size
-        # if num_missing > 0:
-        #     obstacle_centre_distance = np.pad(obstacle_centre_distance, (0, num_missing), 'constant', constant_values=0.0)
-        #     obstacle_centre_cos_bearing = np.pad(obstacle_centre_cos_bearing, (0, num_missing), 'constant', constant_values=0.0)
-        #     obstacle_centre_sin_bearing = np.pad(obstacle_centre_sin_bearing, (0, num_missing), 'constant', constant_values=0.0)
-        #     obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=0.0)
+            # Make a mutable copy
+            p = list(polygon)
+
+            # Flatten [(lat, lon), (lat, lon), ...] -> [lat, lon, lat, lon, ...]
+            points = [coord for latlon in p for coord in latlon]
+
+            poly_name = f"BUFFER_{self.shape_name[i]}"
+            # Draw polygon in BlueSky
+            if self.shape_name[i].startswith("RESTRICTED_AREA"):
+                if self.initialise_observation_flag:
+                    stack.process(f"POLY {poly_name}, " + ", ".join(map(str, points)))
+                    stack.process(f"COLOR {poly_name}, YELLOW")
+            else:
+                stack.process(f"POLY {poly_name}, " + ", ".join(map(str, points)))
+                stack.process(f"COLOR {poly_name}, YELLOW")
+
+            if self.initialise_observation_flag:
+                for ac_idx, id in enumerate(traf.id):
+                    if bs.tools.areafilter.checkInside(poly_name, bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.alt[ac_idx]):
+                        # if the aircraft is inside an obstacle, find the closest point on the obstacle polygon and move the aircraft to that point
+                        (new_lat, new_lon), _ = Baselinetools.functions.closest_point_on_polygon((bs.traf.lat[ac_idx], bs.traf.lon[ac_idx]), polygon, Baselinetools.constants.SAFETY_MARGIN_BUFFER)
+
+                        ## save aircraft data 
+                        lat_before = bs.traf.lat[ac_idx]
+                        lon_before = bs.traf.lon[ac_idx]
+                        alt_before = bs.traf.alt[ac_idx]
+                        tas_before = bs.traf.tas[ac_idx]
+                        hdg_before = bs.traf.hdg[ac_idx]
+                        dest_lat_before = bs.traf.ap.route[ac_idx].wplat[-1]
+                        dest_lon_before = bs.traf.ap.route[ac_idx].wplon[-1] 
+
+                        bs.stack.process(f"CIRCLE BUFFER_{id},{lat_before} {lon_before}, 5")
+                        bs.stack.process(f"COLOUR BUFFER_{id},255,165,0")
+                        bs.stack.process(f"DEL {id}")
+                        bs.stack.process(f'CRE {id}, A320, {new_lat} {new_lon} {hdg_before} {alt_before} {tas_before}')
+                        bs.stack.process(f'DEST {id} {dest_lat_before} {dest_lon_before}')
+
+                    if bs.tools.areafilter.checkInside(poly_name, bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1], bs.traf.alt[ac_idx]):
+                        # if the aircraft is inside an obstacle, find the closest point on the obstacle polygon and move the aircraft to that point
+                        (new_lat_dest, new_lon_dest), _ = Baselinetools.functions.closest_point_on_polygon((bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1]), polygon, Baselinetools.constants.SAFETY_MARGIN_BUFFER)
+
+                        ## save aircraft data 
+                        lat_before = bs.traf.lat[ac_idx]
+                        lon_before = bs.traf.lon[ac_idx]
+                        alt_before = bs.traf.alt[ac_idx]
+                        tas_before = bs.traf.tas[ac_idx]
+                        hdg_before = bs.traf.hdg[ac_idx]
+                        dest_lat_before = bs.traf.ap.route[ac_idx].wplat[-1]
+                        dest_lon_before = bs.traf.ap.route[ac_idx].wplon[-1] 
+                        
+                        bs.stack.process(f"CIRCLE BUFFER_{id},{dest_lat_before} {dest_lon_before}, 5")
+                        bs.stack.process(f"COLOUR BUFFER_{id},255,165,0")
+                        bs.stack.process(f"DEL {id}")
+                        bs.stack.process(f'CRE {id}, A320, {lat_before} {lon_before} {hdg_before} {alt_before} {tas_before}')
+                        bs.stack.process(f'DEST {id} {new_lat_dest} {new_lon_dest}')
 
 
-        # if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclecrenv-v0'):
-        #     # intruder observation
-        #     intruders_lat = np.delete(bs.traf.lat, ac_idx)
-        #     intruders_lon = np.delete(bs.traf.lon, ac_idx)
-            
-        #     int_qdr, int_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], intruders_lat, intruders_lon)
+                    bs.stack.process(f"CIRCLE BUFFER_{id}_dest_test,{bs.traf.ap.route[ac_idx].wplat[-1]} {bs.traf.ap.route[ac_idx].wplon[-1]}, 5")
+                    bs.stack.process(f"COLOUR BUFFER_{id}_dest_test,0,255,0")
 
-        #     # index of the closes N_INTRUDERS intruders for arrays of intruders_lat, intruders_lon, int_qdr, int_dis, intruders_speed, intruders_heading: the ownship is excluded a priori in these
-        #     closest_intruders_idx = np.argsort(int_dis)[:self.NUM_INTRUDERS]
+                        # bs.stack.process(f"MOVE {id} {lat} {lon}")
 
-        #     intruder_distance = int_dis[closest_intruders_idx] * RLtools.constants.NM2KM
+                # if bs.tools.areafilter.checkInside(poly_name, traf.ap.route[ac_idx].wplat[-1], traf.ap.route[ac_idx].wplon[-1], bs.traf.alt[ac_idx]):
+                #     # if the destination waypoint is inside an obstacle, find the closest point on the obstacle polygon and move the waypoint to that point
+                #     (lat, lon), _ = Baselinetools.functions.closest_point_on_polygon((traf.ap.route[ac_idx].wplat[-1], traf.ap.route[ac_idx].wplon[-1]), polygon)
 
-        #     # relative heading
-        #     bearing = bs.traf.hdg[ac_idx] - int_qdr[closest_intruders_idx]
-        #     for bearing_idx in range(len(bearing)):
-        #         bearing[bearing_idx] = RLtools.functions.bound_angle_positive_negative_180(bearing[bearing_idx])
-
-        #     intruder_cos_bearing = np.cos(np.deg2rad(bearing))
-        #     intruder_sin_bearing = np.sin(np.deg2rad(bearing))
-
-        #     intruders_heading = np.delete(bs.traf.hdg, ac_idx)
-        #     intruders_speed = np.delete(bs.traf.gs, ac_idx)
-        #     heading_difference = bs.traf.hdg[ac_idx] - intruders_heading[closest_intruders_idx]
-
-        #     # relative speed
-        #     intruder_x_difference_speed = - np.cos(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
-        #     intruder_y_difference_speed = bs.traf.gs[ac_idx] - np.sin(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
-
-        #     # padding the observation if less than NUM_INTRUDERS are present
-        #     if len(closest_intruders_idx) < self.NUM_INTRUDERS:
-        #         num_missing_intruders = self.NUM_INTRUDERS - len(closest_intruders_idx)
-        #         intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(self.waypoint_distance_max,))
-        #         intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
-        #         intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
-        #         intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
-        #         intruder_y_difference_speed =  np.pad(intruder_y_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
-
-        # if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0'):
-        #     # sector polygon edges observation
-        #     sector_points_distance = []
-        #     sector_points_cos_drift = []
-        #     sector_points_sin_drift = []
-
-        #     # Calculate distance and bearing from the ownship to each of the sector points
-        #     for point_index in range(len(self.sector_points)):
-        #         sector_points_qdr, sector_points_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.sector_points[point_index,0],self.sector_points[point_index,1])
-        #         # print(f'point_index: {point_index}, sector_points_dis: {sector_points_dis}, sector_points_qdr: {sector_points_qdr}')
-        #         sector_points_distance.append(sector_points_dis * RLtools.constants.NM2KM)
-
-        #         drift = bs.traf.hdg[ac_idx] - sector_points_qdr
-
-        #         drift = RLtools.functions.bound_angle_positive_negative_180(drift)
-
-        #         sector_points_cos_drift.append(np.cos(np.deg2rad(drift)))
-        #         sector_points_sin_drift.append(np.sin(np.deg2rad(drift)))
-        # # print(f'self.obstacle_radius length is: {len(self.obstacle_radius)}')
-        # # if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
-        # #     print(f'observation: {observation}')
-        # if self.env_name in ('staticobstaclesectorcrenv-v0'):
-        #     observation = {
-        #             "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
-        #             "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
-        #             "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_SPD,
-        #             "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_SPD,
-        #             "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
-        #             "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
-        #             # observations on obstacles
-        #             "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-        #             "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
-        #             "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
-        #             # observations on sector polygon edges and points along the edges
-        #             "sector_points_distance": np.array(sector_points_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
-        #             "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
-        #         }
-        # if self.env_name in ('staticobstaclesectorenv-v0'):
-        #     observation = {
-        #             "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
-        #             "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
-        #             # observations on obstacles
-        #             "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-        #             "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
-        #             "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
-        #             # observations on sector polygon edges and points along the edges
-        #             "sector_points_distance": np.array(sector_points_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
-        #             "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
-        #         }
-        # if self.env_name in ('staticobstaclecrenv-v0'):
-        #     observation = {
-        #             "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
-        #             "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
-        #             "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_SPD,
-        #             "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_SPD,
-        #             "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
-        #             "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
-        #             # observations on obstacles
-        #             "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-        #             "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
-        #             "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
-        #         }
-        # if self.env_name in ('staticobstacleenv-v0'):
-        #     observation = {
-        #             "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
-        #             "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
-        #             # observations on obstacles
-        #             "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-        #             "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
-        #             "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
-        #             "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
-        #         }
-        # print(
-        #     f'observation for aircraft {bs.traf.id[ac_idx]}: '
-        #     f'{ {k: v for k, v in observation.items()} }'
-        # )
-
-        # print(
-        #     f'observation shapes for aircraft {bs.traf.id[ac_idx]}: '
-        #     f'{ {k: v.shape for k, v in observation.items()} }'
-        # )        
-        return self.edges
+                #     traf.ap.route[ac_idx].wplat[-1] = lat
+                #     traf.ap.route[ac_idx].wplon[-1] = lon
+                    # bs.stack.process(f"DELWPT {bs.traf.id[ac_idx]} {traf.ap.route[ac_idx].wplat[-1]} {traf.ap.route[ac_idx].wplon[-1]}")
+                    # bs.stack.process(f"ADDWPT {bs.traf.id[ac_idx]} {lat} {lon}")
+        self._buffer_added_this_step = True
 
     def _set_action(self, action, ac_idx):
         """
         Control each aircraft separately
         """
-        # print(f'New action')
-        # dv = action[1] * self.D_SPEED
-        # dh = action[0] * self.D_HEADING
 
-        id = traf.id[ac_idx]
-        # heading_new = RLtools.functions.bound_angle_positive_negative_180(traf.hdg[ac_idx] + dh)
-        # speed_new = (traf.cas[ac_idx] + dv) * RLtools.constants.MpS2Kt
-        # stack.stack(f"ECHO Aircraft {id} - New heading: {heading_new} deg, New speed: {speed_new/RLtools.constants.MpS2Kt} m/s")
-        # stack.stack(f"HDG {id} {heading_new}")
-        # stack.stack(f"SPD {id} {speed_new}")
-        # print(f'Action for aircraft {id} - traf.hdg: {traf.hdg[ac_idx]} -> {heading_new} with dh {dh}, traf.cas: {traf.cas[ac_idx]} m/s -> {speed_new/RLtools.constants.MpS2Kt} with dv {dv} m/s')
-        stack.stack(f'ADDWPT {id} {action}')
+        stack.stack(f'ADDWPT {traf.id[ac_idx]} {action}')
+
+
+    @stack.command(name='BUFFER')
+    def set_active(self, state: str = 'OFF'):
+        """Activate or deactivate buffer around obstacles.
+
+        Args:
+            state (str): 'ON' or 'OFF'.
+        """
+        if state.upper() == 'ON':
+            self.add_buffer = True
+        elif state.upper() == 'OFF':
+            self.add_buffer = False
+
+
+    @stack.command(name='START_NEXT')
+    def start_next_scenario(self):
+        """Start the next scenario in the batch.
+        """
+        self.start_next = True

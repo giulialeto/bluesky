@@ -3,11 +3,14 @@ Functions for the CentralisedStaticObstacleSectorCREnv-0 environment.
 '''
 
 import numpy as np
+from pygame.gfxdraw import polygon
 import bluesky as bs
 from math import radians, sin, cos, sqrt, atan2
 from statistics import mean
 from typing import List
 import networkx as nx
+from shapely.geometry import Polygon
+from plugins.SingleAgentCRTools import functions
 
 def bound_angle_positive_negative_180(angle_deg: float) -> float:
     """ maps any angle in degrees to the [-180,180] interval 
@@ -110,7 +113,7 @@ def nm_to_latlong(center: np.array, point: np.array) -> np.array:
     center: np.array
         center point of the conversion
     point: np.array
-        point to be converted
+        point to be converted. point[0] is the x (east) coordinate in nm, point[1] is the y (north) coordinate in nm.
     
     Returns
     __________
@@ -126,9 +129,9 @@ def latlong_to_nm(center: np.array, point: np.array) -> np.array:
     Parameters
     __________
     center: np.array
-        center point of the conversion
+        center point of the conversion in lat/long coordinates
     point: np.array
-        point to be converted
+        point to be converted in lat/long coordinates
     
     Returns
     __________
@@ -358,3 +361,162 @@ def astar_route(G, start, goal):
         return haversine_m(a[0], a[1], b[0], b[1])* 0.539956803 # Convert meters to NM
 
     return nx.astar_path(G, start, goal, heuristic=heuristic, weight="weight")
+
+def buffer_util_polygon_centroid_latlon(polygon):
+    """
+    Calculate centroid in lat/lon by averaging vertices.
+
+    Args:
+        polygon (list[tuple[float, float]]): List of (lat, lon) vertices.
+
+    Returns:
+        centroid (tuple[float, float]): (lat, lon)
+    """
+    arr = np.asarray(polygon, dtype=float)
+    return float(np.mean(arr[:, 0])), float(np.mean(arr[:, 1]))
+
+def buffer_shapely(polygon, buffer_nm):
+    """
+    Approximate polygon buffer by pushing each vertex radially outward
+    from the polygon centroid.
+
+    Args:
+        polygon (list[tuple[float, float]]): List of (lat, lon) vertices.
+        buffer_nm (float): Buffer distance [NM].
+
+    Returns:
+        buffered_polygon (list[tuple[float, float]]): Buffered vertices.
+    """
+
+    c_lat, c_lon = buffer_util_polygon_centroid_latlon(polygon)
+    centre = np.array([c_lat, c_lon])
+    polygon_nm = [latlong_to_nm(centre, vertex) for vertex in polygon]
+
+    # print(f"[buffer_shapely] input has {len(polygon)} vertices: {polygon}")
+    # print(f"[buffer_shapely] polygon_nm has {len(polygon_nm)} points: {polygon_nm}")
+
+
+    # Close the ring if not already closed (needed for triangles / Shapely >= 2.0)
+    if not np.allclose(polygon_nm[0], polygon_nm[-1]):
+        polygon_nm.append(polygon_nm[0])
+
+    # print(f"[buffer_shapely] closed polygon_nm has {len(polygon_nm)} points: {polygon_nm}")
+
+    poly_shapely = Polygon(polygon_nm)
+    poly_buffer = poly_shapely.buffer(buffer_nm, join_style=2)
+
+
+    p_buffer = list(poly_buffer.exterior.coords)
+
+    p_buffer = [functions.nm_to_latlong(centre, point) for point in p_buffer] # Convert to lat/long coordinates
+
+    return p_buffer
+
+def buffer_obstacles_nm(obstacles, buffer_nm):
+    """
+    Apply approximate radial buffer to all obstacle polygons.
+
+    Args:
+        obstacles (list[list[tuple[float, float]]]): Obstacle polygons.
+        buffer_nm (float): Buffer distance [NM].
+
+    Returns:
+        buffered_obstacles (list[list[tuple[float, float]]]): Buffered polygons.
+    """
+    return [buffer_shapely(poly, buffer_nm) for poly in obstacles]
+
+
+def closest_point_on_segment(P, A, B):
+    """
+    Compute closest point from P to segment AB.
+
+    Args:
+        P (np.ndarray): Point.
+        A (np.ndarray): Segment start.
+        B (np.ndarray): Segment end.
+
+    Returns:
+        Q (np.ndarray): Closest point on segment.
+        dist2 (float): Squared distance.
+    """
+
+    AB = B - A
+    AP = P - A
+
+    denom = np.dot(AB, AB)
+
+    # Degenerate segment
+    if denom == 0:
+        Q = A
+        return Q, np.dot(P - Q, P - Q)
+
+    t = np.dot(AP, AB) / denom
+
+    # Clamp to segment
+    t = np.clip(t, 0.0, 1.0)
+
+    Q = A + t * AB
+
+    dist2 = np.dot(P - Q, P - Q)
+
+    return Q, dist2
+
+
+def closest_point_on_polygon(aircraft, polygon, safety_margin):
+
+    """
+
+    Find closest point on a closed polygon boundary to an aircraft.
+
+    Args:
+
+        aircraft (tuple): Aircraft position as (lat, lon).
+
+        polygon (list[tuple]): Closed polygon vertices as [(lat, lon), ...].
+
+            The first and last point may be the same.
+
+    Returns:
+
+        closest_point_nm (np.ndarray): Closest boundary point in nautical-mile coordinates.
+
+        closest_distance_nm (float): Distance from aircraft to boundary in nautical miles.
+
+    """
+
+    c_lat, c_lon = buffer_util_polygon_centroid_latlon(polygon)
+    centre = np.array([c_lat, c_lon])
+
+    polygon_nm = [latlong_to_nm(centre, vertex) for vertex in polygon]
+
+    aircraft_nm = latlong_to_nm(centre, aircraft)
+
+    polygon_nm = [np.asarray(p, dtype=float) for p in polygon_nm]
+
+    aircraft_nm = np.asarray(aircraft_nm, dtype=float)
+
+    best_Q = None
+
+    best_dist2 = np.inf
+
+    # Since polygon is closed, avoid checking the duplicate final point twice
+
+    n = len(polygon_nm)
+
+    for i in range(n - 1):
+
+        A = polygon_nm[i]
+
+        B = polygon_nm[i + 1]
+
+        Q, dist2 = closest_point_on_segment(aircraft_nm, A, B)
+
+        if dist2 < best_dist2:
+
+            best_Q = Q
+
+            best_dist2 = dist2
+
+    best_Q_latlon = nm_to_latlong(centre, best_Q*(1+safety_margin)) # Add a small margin to ensure the point is outside the obstacle
+
+    return best_Q_latlon, np.sqrt(best_dist2)
