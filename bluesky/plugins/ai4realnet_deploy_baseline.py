@@ -287,9 +287,16 @@ class DeployBaseline(core.Entity):
                 stack.stack(f"DELWPT {bs.traf.id[ac_idx]} {element}")
 
         for element in planned_path[1:-1]:  # skip the first and last point as they correspond to the current position and the destination waypoint
-        # for element in planned_path[1:]:  # skip the first and last point as they correspond to the current position and the destination waypoint
             bs.stack.stack(f"ADDWPT {bs.traf.id[ac_idx]} {element[0]} {element[1]}")
-            
+
+        for i, polygon in enumerate(self.obstacle_vertices):
+            # stack.echo(f"Processing obstacle {i} called {self.shape_name[i]} for aircraft {bs.traf.id[ac_idx]}")
+            # process coordinates for all the areas in basic shapes except the one corresponding to the sector (restricted areas + volcanic/weather disturbances, escaping the areas by a certain buffer)
+            # if self.shape_name[i].startswith("BUFFER_") and self.add_buffer:
+            if bs.tools.areafilter.checkInside(self.shape_name[i], bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.alt[ac_idx]):
+                (closest_way_out_lat, closest_way_out_lon), _ = Baselinetools.functions.closest_point_on_polygon((bs.traf.lat[ac_idx], bs.traf.lon[ac_idx]), polygon, Baselinetools.constants.SAFETY_MARGIN_BUFFER)
+                bs.stack.process(f"ADDWPT {bs.traf.id[ac_idx]} {closest_way_out_lat} {closest_way_out_lon}")
+
     def _get_obs(self, ac_idx):
         """
         Observation is the normalized. Normalisation logic should be studied further
@@ -329,7 +336,9 @@ class DeployBaseline(core.Entity):
                 self.delete_buffer_volcanic = True
         if self.add_buffer and not self._buffer_added_this_step: # only need to add the buffer once per update, not for each aircraft
             self._add_buffer()
-        self.obstacle_vertices = self.buffered_obstacle_vertices
+        if self.add_buffer:
+            self.obstacle_vertices = self.buffered_obstacle_vertices
+            self.shape_name = ["BUFFER_" + name for name in self.shape_name]
 
         if self.initialise_observation_flag:
             self.initialise_observation_flag = False
@@ -384,8 +393,8 @@ class DeployBaseline(core.Entity):
                         dest_lat_before = bs.traf.ap.route[ac_idx].wplat[-1]
                         dest_lon_before = bs.traf.ap.route[ac_idx].wplon[-1] 
 
-                        bs.stack.process(f"CIRCLE BUFFER_{id},{lat_before} {lon_before}, 5")
-                        bs.stack.process(f"COLOUR BUFFER_{id},255,165,0")
+                        # bs.stack.process(f"CIRCLE BUFFER_{id},{lat_before} {lon_before}, 5")
+                        # bs.stack.process(f"COLOUR BUFFER_{id},255,165,0")
                         bs.stack.process(f"DEL {id}")
                         bs.stack.process(f'CRE {id}, A320, {new_lat} {new_lon} {hdg_before} {alt_before} {tas_before}')
                         bs.stack.process(f'DEST {id} {dest_lat_before} {dest_lon_before}')
@@ -403,8 +412,8 @@ class DeployBaseline(core.Entity):
                         dest_lat_before = bs.traf.ap.route[ac_idx].wplat[-1]
                         dest_lon_before = bs.traf.ap.route[ac_idx].wplon[-1] 
                         
-                        bs.stack.process(f"CIRCLE BUFFER_{id},{dest_lat_before} {dest_lon_before}, 5")
-                        bs.stack.process(f"COLOUR BUFFER_{id},255,165,0")
+                        # bs.stack.process(f"CIRCLE BUFFER_{id},{dest_lat_before} {dest_lon_before}, 5")
+                        # bs.stack.process(f"COLOUR BUFFER_{id},255,165,0")
                         bs.stack.process(f"DEL {id}")
                         bs.stack.process(f'CRE {id}, A320, {lat_before} {lon_before} {hdg_before} {alt_before} {tas_before}')
                         bs.stack.process(f'DEST {id} {new_lat_dest} {new_lon_dest}')
