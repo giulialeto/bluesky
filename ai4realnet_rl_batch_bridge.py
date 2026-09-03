@@ -180,6 +180,12 @@ def build_context_payload():
             "Current_airspeed": float(bs.traf.gs[i]) * 1.94384,  # m/s -> knots
             "Latitude": float(bs.traf.lat[i]),
             "Longitude": float(bs.traf.lon[i]),
+            # True heading, degrees clockwise from north (0-360) -- matches
+            # both compass convention and CSS's rotate() direction, so the
+            # frontend can point aircraft icons the right way. Requires the
+            # matching `heading` field on PlaneMetadataSchemaATM in
+            # backend/context-service/resources/ATM/schemas.py.
+            "heading": float(bs.traf.hdg[i]),
         })
     return {
         "use_case": "ATM",
