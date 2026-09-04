@@ -170,6 +170,34 @@ def _post_with_relogin(url, payload):
     return response
 
 
+def build_shapes_payload():
+    """Builds the sector/weather/volcanic shape list matching
+    ShapeMetadataSchemaATM (backend/context-service/resources/ATM/schemas.py).
+    Reads BlueSky's named area shapes (areafilter.basic_shapes), which
+    includes the sector polygon defined in the scenario plus any
+    WEATHER_CELL/VOLCANIC_CELL disturbances the disturbance_generator plugin
+    has spawned."""
+    shapes = []
+    basic_shapes = getattr(bs.tools.areafilter, "basic_shapes", {})
+    for name, shape in basic_shapes.items():
+        coordinates = list(shape.coordinates)
+        # coordinates is a flat [lat0, lon0, lat1, lon1, ...] list
+        points = [[float(lat), float(lon)]
+                  for lat, lon in zip(coordinates[::2], coordinates[1::2])]
+        if not points:
+            continue
+        if name == "WEATHER_CELL":
+            kind = "WEATHER"
+        elif name == "VOLCANIC_CELL":
+            kind = "VOLCANIC"
+        elif name == CONFIG.get("sector_name"):
+            kind = "SECTOR"
+        else:
+            kind = "OBSTACLE"
+        shapes.append({"name": name, "kind": kind, "coordinates": points})
+    return shapes
+
+
 def build_context_payload():
     """Builds the ATM context payload matching MetadataSchemaATM
     (backend/context-service/resources/ATM/schemas.py)."""
@@ -190,7 +218,7 @@ def build_context_payload():
     return {
         "use_case": "ATM",
         "date": datetime.now(timezone.utc).isoformat(),
-        "data": {"airplanes": airplanes},
+        "data": {"airplanes": airplanes, "shapes": build_shapes_payload()},
     }
 
 
@@ -433,6 +461,11 @@ def main():
     parser.add_argument("--acid", default=None,
                          help="Optional: aircraft ID /update-flight-plan applies to. "
                               "Not needed for pure monitoring.")
+    parser.add_argument("--sector-name", default="LISBON_FIR",
+                         help="Name of the sector area shape (as defined in the scenario "
+                              "via e.g. `BOX`/`POLY` stack commands) to tag with kind=SECTOR "
+                              "in the shapes payload. Any other named shape that isn't "
+                              "WEATHER_CELL/VOLCANIC_CELL is tagged kind=OBSTACLE.")
     args = parser.parse_args()
 
     PUSH_INTERVAL_S = args.push_interval
@@ -444,6 +477,7 @@ def main():
         "plugin": args.plugin,
         "scenario": args.scenario,
         "acid": args.acid,
+        "sector_name": args.sector_name,
     })
 
     init_bluesky()
