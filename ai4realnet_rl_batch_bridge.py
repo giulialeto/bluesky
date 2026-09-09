@@ -128,6 +128,8 @@ def _capture_net_send(topic, data='', to_group=b''):
 def init_bluesky():
     bs.init(mode="sim", detached=True)
     bs.net.send = _capture_net_send  # start capturing BlueSky's log stream immediately
+    # Activate conflig detection, to color protected zones red when a LoS occurs.
+    stack.stack("CDMETHOD ON")
     stack.stack(f"PLUGIN {CONFIG['plugin']}")
     stack.stack(f"DETACHED_BATCH {CONFIG['scenario']}")
 
@@ -198,9 +200,20 @@ def build_shapes_payload():
     return shapes
 
 
+def _aircraft_in_los():
+    """Set of acids currently in a loss of separation per BlueSky's own conflict
+    detection module (traf.cd.lospairs)."""
+    los_acids = set()
+    for a, b in getattr(bs.traf.cd, "lospairs", []):
+        los_acids.add(a)
+        los_acids.add(b)
+    return los_acids
+
+
 def build_context_payload():
     """Builds the ATM context payload matching MetadataSchemaATM
     (backend/context-service/resources/ATM/schemas.py)."""
+    los_acids = _aircraft_in_los()
     airplanes = []
     for i in range(bs.traf.ntraf):
         airplanes.append({
@@ -214,6 +227,8 @@ def build_context_payload():
             # matching `heading` field on PlaneMetadataSchemaATM in
             # backend/context-service/resources/ATM/schemas.py.
             "heading": float(bs.traf.hdg[i]),
+            # True if another aircraft is currently inside this one's protected zone
+            "in_los": bs.traf.id[i] in los_acids,
         })
     return {
         "use_case": "ATM",
