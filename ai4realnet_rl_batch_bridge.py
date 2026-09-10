@@ -112,15 +112,24 @@ def sim_loop():
             bs.sim.step()
         time.sleep(LOOP_SLEEP)
 
+# Remove _SUPPRESSED_ECHO_PREFIXES and _capture_net_send after finalising the development. The user does not need to see these messages. 
+_SUPPRESSED_ECHO_PREFIXES = (
+    # Remove ECHO messages that are not useful to the operator from the event stream.
+    "Selected StateBased as CD method.",
+)
+
 
 def _capture_net_send(topic, data='', to_group=b''):
-    """Replaces bluesky.network.detached.Node.send so that ECHO 
-        messages are captured instead.This runs on the sim thread, 
+    """Replaces bluesky.network.detached.Node.send so that ECHO
+        messages are captured instead. This runs on the sim thread,
         inside _sim_lock."""
     try:
         topic_str = topic.decode() if isinstance(topic, bytes) else topic
         if topic_str == "ECHO" and isinstance(data, dict):
-            EVENT_QUEUE.put(("echo", data.get("text", ""), data.get("flags", 0)))
+            text = data.get("text", "")
+            if text.strip().startswith(_SUPPRESSED_ECHO_PREFIXES):
+                return
+            EVENT_QUEUE.put(("echo", text, data.get("flags", 0)))
     except Exception as exc:
         print(f"[bridge] failed to capture net.send({topic!r}): {exc}")
 
@@ -329,7 +338,7 @@ def push_loop():
                                   f"{shape_name} disturbance is no longer active.",
                                   "ROUTINE"))
             _prev_disturbance_shapes = current_disturbances
-
+           
         except Exception as exc:  # simulator must keep running even if CAB is unreachable
             print(f"[push_loop] failed to push context: {exc}")
         time.sleep(PUSH_INTERVAL_S)
