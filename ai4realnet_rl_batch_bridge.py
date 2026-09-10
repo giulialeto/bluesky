@@ -128,10 +128,10 @@ def _capture_net_send(topic, data='', to_group=b''):
 def init_bluesky():
     bs.init(mode="sim", detached=True)
     bs.net.send = _capture_net_send  # start capturing BlueSky's log stream immediately
-    # Activate conflig detection, to color protected zones red when a LoS occurs.
-    stack.stack("CDMETHOD ON")
     stack.stack(f"PLUGIN {CONFIG['plugin']}")
     stack.stack(f"DETACHED_BATCH {CONFIG['scenario']}")
+    # Activate conflict detection, to color protected zones red when a LoS occurs in InteractiveAI's frontend.
+    stack.stack("CDMETHOD ON")
 
 
 # --------------------------------------------------------------------------
