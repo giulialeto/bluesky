@@ -130,9 +130,16 @@ def init_bluesky():
     bs.net.send = _capture_net_send  # start capturing BlueSky's log stream immediately
     stack.stack(f"PLUGIN {CONFIG['plugin']}")
     stack.stack(f"DETACHED_BATCH {CONFIG['scenario']}")
-    # Activate conflict detection, to color protected zones red when a LoS occurs in InteractiveAI's frontend.
-    stack.stack("CDMETHOD ON")
 
+def _cd_activation():
+    """Keeps conflict detection active (detached batch logic de-activates it at every reset).
+        This is used to show the protected zones in red in the front end, if separation is lost."""
+    while True:
+        time.sleep(2)
+        with _sim_lock:
+            resolved = bs.traf.cd.__dict__.get("_refobj")
+            if type(resolved).__name__ != "StateBased":
+                stack.stack("CDMETHOD ON")
 
 # --------------------------------------------------------------------------
 # InteractiveAI (CAB) client -- login + push context/events
@@ -500,6 +507,7 @@ def main():
     threading.Thread(target=sim_loop, daemon=True).start()
     threading.Thread(target=push_loop, daemon=True).start()
     threading.Thread(target=event_worker, daemon=True).start()
+    threading.Thread(target=_cd_activation, daemon=True).start()
 
     app.run(host=args.host, port=args.port, threaded=True)
 
