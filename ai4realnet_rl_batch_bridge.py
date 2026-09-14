@@ -60,7 +60,7 @@ import base64
 import queue
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 from flask import Flask, jsonify, request
@@ -68,11 +68,12 @@ from flask_cors import CORS
 
 import bluesky as bs
 from bluesky import stack
+# Only to fetch the duration of the perturbation - the perturbations are generated from the bluesky scenario: `PLUGIN disturbance_generator`
+import bluesky.plugins.ai4realnet_perturbations as perturbations_plugin
 
 app = Flask(__name__)
-CORS(app)  # dev-only: wide open.
+CORS(app)
 
-LOOP_SLEEP = 0.1
 PUSH_INTERVAL_S = 5
 
 _sim_lock = threading.Lock()
@@ -83,9 +84,17 @@ _scenario_started = False
 # that neither the sim thread nor the poll thread ever blocks on an HTTP call.
 EVENT_QUEUE = queue.Queue()
 
-# Snapshot of the world as of the previous poll, used to diff for lifecycle
+# Snapshot of the world as of the previous poll
 _prev_aircraft_ids = set()
 _prev_disturbance_shapes = set()
+_prev_los_pairs = set()
+
+# Event types whose lifecycle has a end. The "start" push leaves endDate empty if the end time is unknown. 
+# The end of the event triggers an update to the same event_type with the endDate set.
+_OPEN_ENDED_EVENT_TYPES = {"WEATHER_CELL", "VOLCANIC_CELL", "AIRCRAFT_LOS"}
+
+# Labels for each event recording the startDate, so the update at end of life does not overwrite it.
+_open_condition_start = {}
 
 # opfab-client's public client id/secret, base64'd -- same constant the
 # PowerGrid example uses (usecases_examples/PowerGrid/app/models/Communicate.py)
@@ -105,12 +114,18 @@ _ECHO_CRITICALITY = {getattr(bs, "BS_OK", 0): "ROUTINE"}
 # --------------------------------------------------------------------------
 
 def sim_loop():
+    """Drives BlueSky forward using bs.sim.update()
+    bs.sim.dtmult is used to control the speed of the simulation, set by adding the argument --sim_speed to main. 
+    Overrides the default DTMULT set within the original plugins, to allow human in the loop studies.
+    """
     global _sim_running
     _sim_running = True
     while _sim_running:
-        with _sim_lock:
-            bs.sim.step()
-        time.sleep(LOOP_SLEEP)
+        with _sim_lock: # bs.sim.update() must be called with the sim lock held, since it reads/writes bs.sim.* state.
+            target_speed = CONFIG.get("sim_speed", 1.0)
+            if bs.sim.dtmult != target_speed:
+                bs.sim.set_dtmult(target_speed)
+            bs.sim.update()
 
 # Remove _SUPPRESSED_ECHO_PREFIXES and _capture_net_send after finalising the development. The user does not need to see these messages. 
 _SUPPRESSED_ECHO_PREFIXES = (
@@ -226,6 +241,32 @@ def _aircraft_in_los():
     return los_acids
 
 
+def _unique_los_pairs():
+    """Places each current loss of separation as a (acid1, acid2) tuple"""
+    return {tuple(sorted(pair)) for pair in getattr(bs.traf.cd, "lospairs_unique", [])}
+
+
+def sim_now():
+    """Gives the simulation's current clock time as a UTC-aware datetime"""
+    with _sim_lock:
+        return bs.sim.utc.replace(tzinfo=timezone.utc)
+
+
+def _disturbance_end_date(shape_name):
+    """Fetches the end date of WEATHER_CELL or VOLCANIC_CELL disturbances, which is available by construction. Returns None if that state isn't available"""
+    gen = perturbations_plugin.perturbation_generator
+    if gen is None:
+        return None
+    if shape_name == "WEATHER_CELL" and getattr(gen, "weather_active", False):
+        start_simt, lifetime = gen.weather_disturbance_start, gen.weather_cell_lifetime
+    elif shape_name == "VOLCANIC_CELL" and getattr(gen, "volcanic_active", False):
+        start_simt, lifetime = gen.volcanic_disturbance_start, gen.volcanic_cell_lifetime
+    else:
+        return None
+    remaining_s = max(0.0, (start_simt + lifetime) - bs.sim.simt)
+    return bs.sim.utc.replace(tzinfo=timezone.utc) + timedelta(seconds=remaining_s)
+
+
 def build_context_payload():
     """Builds the ATM context payload matching MetadataSchemaATM
     (backend/context-service/resources/ATM/schemas.py)."""
@@ -248,7 +289,8 @@ def build_context_payload():
         })
     return {
         "use_case": "ATM",
-        "date": datetime.now(timezone.utc).isoformat(),
+        # Simulated time
+        "date": bs.sim.utc.replace(tzinfo=timezone.utc).isoformat(),
         "data": {"airplanes": airplanes, "shapes": build_shapes_payload()},
     }
 
@@ -259,18 +301,30 @@ def push_context():
 
 
 def push_event(*, id_plane, system, event_type, title, description,
-               criticality="MEDIUM", is_active=True, duration_minutes=5):
+               criticality="MEDIUM", is_active=True, duration_minutes=5,
+               start_date=None, end_date=None):
     """Pushes an event matching MetadataSchemaATM
     (backend/event-service/resources/ATM/schemas.py: event_type, system,
-    id_plane required)."""
-    now = datetime.now(timezone.utc)
-    end = now.timestamp() + duration_minutes * 60
+    id_plane required).
+
+    start_date defaults to current sim time, unless an update to an existing card is being pushed, for which the original start_date is preserved.
+
+    The endDate is set in sim time when available. Once endDate passes, the card is automatically removed from the active alerts. 
+    Pass duration_minutes=None (and no end_date) to leave the card open-ended until a later update sets the endDate."""
+    now = sim_now()
+    if end_date is not None:
+        end_date_iso = end_date.isoformat()
+    elif duration_minutes is not None:
+        end = now.timestamp() + duration_minutes * 60
+        end_date_iso = datetime.fromtimestamp(end, tz=timezone.utc).isoformat()
+    else:
+        end_date_iso = None
     payload = {
         "criticality": criticality,
         "title": title[:255],
         "description": description[:255],
-        "start_date": now.isoformat(),
-        "end_date": datetime.fromtimestamp(end, tz=timezone.utc).isoformat(),
+        "start_date": (start_date or now).isoformat(),
+        "end_date": end_date_iso,
         "data": {"event_type": event_type, "system": system, "id_plane": id_plane},
         "use_case": "ATM",
         "is_active": is_active,
@@ -280,6 +334,9 @@ def push_event(*, id_plane, system, event_type, title, description,
 
 
 def _push_echo_event(text, flags):
+    ''' Pushes a BlueSky ECHO message to InteractiveAI's event-service. The first line of the ECHO is used as the title, and the rest as the description.
+    Events from bluesky's ECHO are tagged with low priotity
+    Can be deleted once the development is finalised.'''
     if not text:
         return
     criticality = _ECHO_CRITICALITY.get(flags, "LOW")
@@ -300,8 +357,8 @@ def _push_echo_event(text, flags):
 
 def push_loop():
     """Background thread: logs in, then periodically pushes context and
-    diffs the world for lifecycle events (sources #1 and #3)."""
-    global _prev_aircraft_ids, _prev_disturbance_shapes
+    diffs the world for lifecycle events."""
+    global _prev_aircraft_ids, _prev_disturbance_shapes, _prev_los_pairs
     while not cab_login():
         time.sleep(5)
     while _sim_running:
@@ -314,31 +371,53 @@ def push_loop():
                     name for name in shapes
                     if name in ("WEATHER_CELL", "VOLCANIC_CELL")
                 }
+                # check for aircraft pairs in a loss of separation
+                current_los_pairs = _unique_los_pairs()
+                new_disturbances = current_disturbances - _prev_disturbance_shapes
+                # For weather/volcanic disturbances, fetches the end date directly from the plugin's construction of the disturbance,
+                disturbance_end_dates = {name: _disturbance_end_date(name) for name in new_disturbances}
 
+            # Alert when an aircraft enters the sector or leaves it.
             for acid in current_ids - _prev_aircraft_ids:
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} entered the sector",
                                   f"Aircraft {acid} was spawned by the RL batch scenario.",
-                                  "ROUTINE"))
+                                  "ROUTINE", False, None))
             for acid in _prev_aircraft_ids - current_ids:
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_REMOVED",
                                   f"Aircraft {acid} left the sector",
                                   f"Aircraft {acid} was removed (destination reached or batch reset).",
-                                  "ROUTINE"))
+                                  "ROUTINE", False, None))
             _prev_aircraft_ids = current_ids
 
-            for shape_name in current_disturbances - _prev_disturbance_shapes:
-                EVENT_QUEUE.put(("disturbance", shape_name, f"{shape_name}_SPAWNED",
+            # The 2nd to last element of the tuple tells event_worker whether this is the
+            # real end of the condition (True) or its start/an ongoing push
+            # (False); the last is the disturbance's scheduled end (None at the end of the event, as the 2nd to last element already specifies True).
+            for shape_name in new_disturbances:
+                EVENT_QUEUE.put(("disturbance", shape_name, shape_name,
                                   f"{shape_name.replace('_', ' ').title()} appeared",
                                   f"{shape_name} disturbance activated.",
-                                  "MEDIUM"))
+                                  "MEDIUM", False, disturbance_end_dates[shape_name]))
             for shape_name in _prev_disturbance_shapes - current_disturbances:
-                EVENT_QUEUE.put(("disturbance", shape_name, f"{shape_name}_CLEARED",
+                EVENT_QUEUE.put(("disturbance", shape_name, shape_name,
                                   f"{shape_name.replace('_', ' ').title()} cleared",
                                   f"{shape_name} disturbance is no longer active.",
-                                  "ROUTINE"))
+                                  "ROUTINE", True, None))
             _prev_disturbance_shapes = current_disturbances
-           
+
+            # Alert fired when two aircraft are in a loss of separation or when the loss of separation is resolved. EndDate for these events is not known in advance.
+            for acid1, acid2 in current_los_pairs - _prev_los_pairs:
+                EVENT_QUEUE.put(("aircraft", acid1, "AIRCRAFT_LOS",
+                                  f"Loss of separation: {acid1} - {acid2}",
+                                  f"Aircraft {acid1} and aircraft {acid2} are in a loss of separation.",
+                                  "HIGH", False, None))
+            for acid1, acid2 in _prev_los_pairs - current_los_pairs:
+                EVENT_QUEUE.put(("aircraft", acid1, "AIRCRAFT_LOS",
+                                  f"Loss of separation resolved: {acid1} - {acid2}",
+                                  f"Aircraft {acid1} and aircraft {acid2} are no longer in a loss of separation.",
+                                  "ROUTINE", True, None))
+            _prev_los_pairs = current_los_pairs
+
         except Exception as exc:  # simulator must keep running even if CAB is unreachable
             print(f"[push_loop] failed to push context: {exc}")
         time.sleep(PUSH_INTERVAL_S)
@@ -358,10 +437,30 @@ def event_worker():
                 _, text, flags = item
                 _push_echo_event(text, flags)
             elif kind in ("aircraft", "disturbance"):
-                _, id_plane, event_type, title, description, criticality = item
+                _, id_plane, event_type, title, description, criticality, resolved, scheduled_end = item
                 system = "BLUESKY_RL_BATCH" if kind == "aircraft" else "ENVIRONMENT"
-                push_event(id_plane=id_plane, system=system, event_type=event_type,
-                           title=title, description=description, criticality=criticality)
+                if event_type in _OPEN_ENDED_EVENT_TYPES:
+                    # Same id_plane + event_type on both the "start" and
+                    # "end" push, so InteractiveAI's event-service treats
+                    # the second as an update to the SAME card
+                    key = (id_plane, event_type)
+                    now = sim_now()
+                    if resolved:
+                        start = _open_condition_start.pop(key, now)
+                        # The observed end -- corrects any earlier scheduled_end estimate
+                        end = now
+                    else:
+                        start = _open_condition_start.setdefault(key, now)
+                        # Sets a scheduled end date if known in advance (WEATHER_CELL/VOLCANIC_CELL), None for AIRCRAFT_LOS,
+                        # which leaves the card open until the "resolved" push supplies the end time.
+                        end = scheduled_end
+                    push_event(id_plane=id_plane, system=system, event_type=event_type,
+                               title=title, description=description, criticality=criticality,
+                               start_date=start, end_date=end, duration_minutes=None)
+                else:
+                    # Everything else uses a the default 5-minute auto-expiry for notifications.
+                    push_event(id_plane=id_plane, system=system, event_type=event_type,
+                               title=title, description=description, criticality=criticality)
         except Exception as exc:
             print(f"[event_worker] failed to push event {item!r}: {exc}")
         finally:
@@ -376,6 +475,7 @@ def event_worker():
 def health():
     with _sim_lock:
         n_aircraft = int(bs.traf.ntraf) if _sim_running else 0
+        current_dtmult = float(bs.sim.dtmult) if _sim_running else None
     return jsonify({
         "status": "ok",
         "sim_running": _sim_running,
@@ -385,6 +485,8 @@ def health():
         "scenario": CONFIG.get("scenario"),
         "n_aircraft": n_aircraft,
         "pending_events": EVENT_QUEUE.qsize(),
+        "sim_speed": CONFIG.get("sim_speed"),
+        "dtmult": current_dtmult,
     })
 
 
@@ -404,6 +506,13 @@ def command():
     cmd = data.get("command")
     if not cmd:
         return jsonify({"ok": False, "error": "missing 'command' field"}), 400
+    # allows to change the simulation speed while running: POST {"command": "DTMULT <n>"}
+    parts = cmd.strip().split()
+    if len(parts) == 2 and parts[0].upper() == "DTMULT":
+        try:
+            CONFIG["sim_speed"] = float(parts[1])
+        except ValueError:
+            pass
     with _sim_lock:
         stack.stack(cmd)
     return jsonify({"ok": True, "command": cmd})
@@ -497,6 +606,11 @@ def main():
                               "via e.g. `BOX`/`POLY` stack commands) to tag with kind=SECTOR "
                               "in the shapes payload. Any other named shape that isn't "
                               "WEATHER_CELL/VOLCANIC_CELL is tagged kind=OBSTACLE.")
+    parser.add_argument("--sim-speed", type=float, default=1.0,
+                         help="BlueSky simulation-speed multiplier (dtmult): 1.0 runs the "
+                              "simulated clock at real-time, N runs it N times faster."
+                              "Also adjustable while running via POST /command "
+                              "{'command': 'DTMULT <n>'}.")
     args = parser.parse_args()
 
     PUSH_INTERVAL_S = args.push_interval
@@ -509,11 +623,16 @@ def main():
         "scenario": args.scenario,
         "acid": args.acid,
         "sector_name": args.sector_name,
+        "sim_speed": args.sim_speed,
     })
 
     init_bluesky()
     _scenario_started = True
     threading.Thread(target=sim_loop, daemon=True).start()
+
+    while not cab_login():
+        time.sleep(5)
+
     threading.Thread(target=push_loop, daemon=True).start()
     threading.Thread(target=event_worker, daemon=True).start()
     threading.Thread(target=_cd_activation, daemon=True).start()
