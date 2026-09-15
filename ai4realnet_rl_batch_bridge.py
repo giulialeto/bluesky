@@ -53,12 +53,17 @@ Usage
     pip install stable_baselines3
 
     python ai4realnet_rl_batch_bridge.py \\
-        --port 5100 \\
+        --port 6100 \\
         --cab-url http://localhost:3200/ \\
         --cab-user atm_user --cab-password test
 
+To run a plain scenario without using deployRL_batch's custom initialize_scenario
+    python ai4realnet_rl_batch_bridge.py \\
+        --plugin None \\
+        --scenario scenario.scn
+
 Then point InteractiveAI's frontend build at this bridge:
-    export VITE_ATM_SIMU=http://localhost:5100
+    export VITE_ATM_SIMU=http://localhost:6100
 
 """
 
@@ -160,8 +165,13 @@ def _capture_net_send(topic, data='', to_group=b''):
 def init_bluesky():
     bs.init(mode="sim", detached=True)
     bs.net.send = _capture_net_send  # start capturing BlueSky's log stream immediately
-    stack.stack(f"PLUGIN {CONFIG['plugin']}")
-    stack.stack(f"DETACHED_BATCH {CONFIG['scenario']}")
+    if CONFIG["plugin"] is not None:
+        # This is meant to load the 'detatched_batch' plugin
+        stack.stack(f"PLUGIN {CONFIG['plugin']}")
+        stack.stack(f"DETACHED_BATCH {CONFIG['scenario']}")
+    else:
+        # No plugin: load the scenario the normal BlueSky way.
+        stack.stack(f"IC {CONFIG['scenario']}")
 
 def _cd_activation():
     """Keeps conflict detection active (detached batch logic de-activates it at every reset).
@@ -646,9 +656,11 @@ def main():
     parser.add_argument("--cab-password", default="test")
     parser.add_argument("--plugin", default="deployRL_batch",
                          help="Plugin to load (matches plugin_name in "
-                              "ai4realnet_deploy_RL_batch.py's init_plugin())")
+                              "ai4realnet_deploy_RL_batch.py's init_plugin()). "
+                              "Pass 'None' (case-insensitive) or an empty string to skip "
+                              "loading a plugin and load --scenario with plain IC instead ")
     parser.add_argument("--scenario", default="ai4realnet_deploy_RL_batch/ai4realnet_deploy_RL_batch.scn",
-                         help="Path passed to DETACHED_BATCH, relative to settings.cfg's "
+                         help="Path passed to DETACHED_BATCH (or IC if --plugin is None), relative to settings.cfg's "
                               "scenario_path ('scenario/')")
     parser.add_argument("--push-interval", type=float, default=PUSH_INTERVAL_S,
                          help="Seconds between context pushes / lifecycle-diff polls")
@@ -669,11 +681,14 @@ def main():
 
     PUSH_INTERVAL_S = args.push_interval
 
+    # Accept 'None'/'none'/'' 
+    plugin = args.plugin if args.plugin and args.plugin.strip().lower() != "none" else None
+
     CONFIG.update({
         "cab_url": args.cab_url if args.cab_url.endswith("/") else args.cab_url + "/",
         "cab_user": args.cab_user,
         "cab_password": args.cab_password,
-        "plugin": args.plugin,
+        "plugin": plugin,
         "scenario": args.scenario,
         "acid": args.acid,
         "sector_name": args.sector_name,
