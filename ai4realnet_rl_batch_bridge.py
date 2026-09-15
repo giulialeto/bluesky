@@ -38,6 +38,13 @@ Architecture
    emits AIRCRAFT_SPAWNED / AIRCRAFT_REMOVED / WEATHER_CELL_* /
    VOLCANIC_CELL_* events for whatever changed.
 
+4. Aircraft area incursions (polled). Every PUSH_INTERVAL_S poll also checks
+   each in-sector aircraft against restricted areas (a
+   WEATHER_CELL/VOLCANIC_CELL perturbation, or any restricted area the
+   scenario defines) using BlueSky's own
+   areafilter.checkInside(), and emits an AIRCRAFT_IN_<shape name> event when
+   an aircraft enters or leaves one.
+
 Usage
 -----
     cd bluesky
@@ -88,8 +95,9 @@ EVENT_QUEUE = queue.Queue()
 _prev_aircraft_ids = set()
 _prev_disturbance_shapes = set()
 _prev_los_pairs = set()
+_prev_area_incursions = set()  # (acid, shape_name) pairs currently inside a non-sector area shape
 
-# Event types whose lifecycle has a end. The "start" push leaves endDate empty if the end time is unknown. 
+# Event types whose lifecycle has a end. The "start" push leaves endDate empty if the end time is unknown.
 # The end of the event triggers an update to the same event_type with the endDate set.
 _OPEN_ENDED_EVENT_TYPES = {"WEATHER_CELL", "VOLCANIC_CELL", "AIRCRAFT_LOS"}
 
@@ -203,6 +211,20 @@ def _post_with_relogin(url, payload):
     return response
 
 
+def _shape_kind(name):
+    """Classifies a named BlueSky area shape (areafilter.basic_shapes key):
+    the two perturbation shapes the disturbance_generator plugin spawns, the
+    scenario's own sector polygon (--sector-name), or an obstacle."""
+    if name == "WEATHER_CELL":
+        return "WEATHER"
+    elif name == "VOLCANIC_CELL":
+        return "VOLCANIC"
+    elif name == CONFIG.get("sector_name"):
+        return "SECTOR"
+    else:
+        return "OBSTACLE"
+
+
 def build_shapes_payload():
     """Builds the sector/weather/volcanic shape list matching
     ShapeMetadataSchemaATM (backend/context-service/resources/ATM/schemas.py).
@@ -219,16 +241,28 @@ def build_shapes_payload():
                   for lat, lon in zip(coordinates[::2], coordinates[1::2])]
         if not points:
             continue
-        if name == "WEATHER_CELL":
-            kind = "WEATHER"
-        elif name == "VOLCANIC_CELL":
-            kind = "VOLCANIC"
-        elif name == CONFIG.get("sector_name"):
-            kind = "SECTOR"
-        else:
-            kind = "OBSTACLE"
-        shapes.append({"name": name, "kind": kind, "coordinates": points})
+        shapes.append({"name": name, "kind": _shape_kind(name), "coordinates": points})
     return shapes
+
+
+def _aircraft_area_incursions():
+    """Set of (acid, shape_name) pairs for every aircraft currently inside a
+    non-sector named area shape -- a WEATHER_CELL/VOLCANIC_CELL perturbation,
+    or a restricted area -- using BlueSky's own
+    areafilter.checkInside()"""
+    incursions = set()
+    ids = list(bs.traf.id)
+    if not ids:
+        return incursions
+    basic_shapes = getattr(bs.tools.areafilter, "basic_shapes", {})
+    for name in basic_shapes:
+        if _shape_kind(name) == "SECTOR":
+            continue  # the sector is the whole controlled airspace
+        inside = bs.tools.areafilter.checkInside(name, bs.traf.lat, bs.traf.lon, bs.traf.alt)
+        for acid, is_inside in zip(ids, inside):
+            if is_inside:
+                incursions.add((acid, name))
+    return incursions
 
 
 def _aircraft_in_los():
@@ -358,7 +392,7 @@ def _push_echo_event(text, flags):
 def push_loop():
     """Background thread: logs in, then periodically pushes context and
     diffs the world for lifecycle events."""
-    global _prev_aircraft_ids, _prev_disturbance_shapes, _prev_los_pairs
+    global _prev_aircraft_ids, _prev_disturbance_shapes, _prev_los_pairs, _prev_area_incursions
     while not cab_login():
         time.sleep(5)
     while _sim_running:
@@ -373,6 +407,8 @@ def push_loop():
                 }
                 # check for aircraft pairs in a loss of separation
                 current_los_pairs = _unique_los_pairs()
+                # check for aircraft inside a perturbation or restricted area
+                current_area_incursions = _aircraft_area_incursions()
                 new_disturbances = current_disturbances - _prev_disturbance_shapes
                 # For weather/volcanic disturbances, fetches the end date directly from the plugin's construction of the disturbance,
                 disturbance_end_dates = {name: _disturbance_end_date(name) for name in new_disturbances}
@@ -381,12 +417,12 @@ def push_loop():
             for acid in current_ids - _prev_aircraft_ids:
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} entered the sector",
-                                  f"Aircraft {acid} was spawned by the RL batch scenario.",
+                                  " ",
                                   "ROUTINE", False, None))
             for acid in _prev_aircraft_ids - current_ids:
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_REMOVED",
                                   f"Aircraft {acid} left the sector",
-                                  f"Aircraft {acid} was removed (destination reached or batch reset).",
+                                  " ",
                                   "ROUTINE", False, None))
             _prev_aircraft_ids = current_ids
 
@@ -396,12 +432,12 @@ def push_loop():
             for shape_name in new_disturbances:
                 EVENT_QUEUE.put(("disturbance", shape_name, shape_name,
                                   f"{shape_name.replace('_', ' ').title()} appeared",
-                                  f"{shape_name} disturbance activated.",
+                                  " ",
                                   "MEDIUM", False, disturbance_end_dates[shape_name]))
             for shape_name in _prev_disturbance_shapes - current_disturbances:
                 EVENT_QUEUE.put(("disturbance", shape_name, shape_name,
                                   f"{shape_name.replace('_', ' ').title()} cleared",
-                                  f"{shape_name} disturbance is no longer active.",
+                                  " ",
                                   "ROUTINE", True, None))
             _prev_disturbance_shapes = current_disturbances
 
@@ -409,14 +445,32 @@ def push_loop():
             for acid1, acid2 in current_los_pairs - _prev_los_pairs:
                 EVENT_QUEUE.put(("aircraft", acid1, "AIRCRAFT_LOS",
                                   f"Loss of separation: {acid1} - {acid2}",
-                                  f"Aircraft {acid1} and aircraft {acid2} are in a loss of separation.",
+                                  " ",
                                   "HIGH", False, None))
             for acid1, acid2 in _prev_los_pairs - current_los_pairs:
                 EVENT_QUEUE.put(("aircraft", acid1, "AIRCRAFT_LOS",
                                   f"Loss of separation resolved: {acid1} - {acid2}",
-                                  f"Aircraft {acid1} and aircraft {acid2} are no longer in a loss of separation.",
+                                  " ",
                                   "ROUTINE", True, None))
             _prev_los_pairs = current_los_pairs
+
+            # Alert fired when an aircraft enters or leaves a perturbation (WEATHER_CELL/VOLCANIC_CELL) or a restricted area.
+            for acid, shape_name in current_area_incursions - _prev_area_incursions:
+                kind = _shape_kind(shape_name)
+                label = shape_name.replace("_", " ").title()
+                if kind in ("WEATHER", "VOLCANIC"):
+                    title, criticality = f"Aircraft {acid} entered {label}", "MEDIUM"
+                else:
+                    title, criticality = f"Aircraft {acid} entered {label}", "HIGH"
+                EVENT_QUEUE.put(("aircraft", acid, f"AIRCRAFT_IN_{shape_name}",
+                                  title, " ", criticality, False, None))
+            for acid, shape_name in _prev_area_incursions - current_area_incursions:
+                label = shape_name.replace("_", " ").title()
+                EVENT_QUEUE.put(("aircraft", acid, f"AIRCRAFT_IN_{shape_name}",
+                                  f"Aircraft {acid} left {label}",
+                                  " ",
+                                  "ROUTINE", True, None))
+            _prev_area_incursions = current_area_incursions
 
         except Exception as exc:  # simulator must keep running even if CAB is unreachable
             print(f"[push_loop] failed to push context: {exc}")
@@ -439,7 +493,7 @@ def event_worker():
             elif kind in ("aircraft", "disturbance"):
                 _, id_plane, event_type, title, description, criticality, resolved, scheduled_end = item
                 system = "BLUESKY_RL_BATCH" if kind == "aircraft" else "ENVIRONMENT"
-                if event_type in _OPEN_ENDED_EVENT_TYPES:
+                if event_type in _OPEN_ENDED_EVENT_TYPES or event_type.startswith("AIRCRAFT_IN_"):
                     # Same id_plane + event_type on both the "start" and
                     # "end" push, so InteractiveAI's event-service treats
                     # the second as an update to the SAME card
