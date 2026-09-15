@@ -2,8 +2,7 @@
 """
 ai4realnet_rl_batch_bridge.py
 
-HTTP bridge between BlueSky's AI4REALNET ATM
-use case 2 plugin and InteractiveAI.
+HTTP bridge between BlueSky's AI4REALNET ATM use case 2 plugin and InteractiveAI.
 
 This bridge boots BlueSky in detached mode, loads the ai4realnet_deploy_RL_batch plugin & scenario:
 
@@ -14,14 +13,12 @@ This bridge boots BlueSky in detached mode, loads the ai4realnet_deploy_RL_batch
 
 and then streams the scenario state to InteractiveAI.
 
-
 Architecture
 ------------
-    BlueSky (embedded, background threads)
-        --push context (aircraft state)--> InteractiveAI context-service
-        --push events  (log/lifecycle)-->  InteractiveAI event-service
-        <--receive chosen action--         InteractiveAI frontend (POSTs
-                                            to THIS bridge's /update-flight-plan)
+    BlueSky
+        push context (aircraft state)--> InteractiveAI context-service
+        push events  (log/lifecycle)-->  InteractiveAI event-service
+        <--receive chosen actions:  InteractiveAI frontend (POSTs to bridge's /update-flight-plan)
 
 1. Aircraft context (continuous). Every PUSH_INTERVAL_S seconds, the state
    of every aircraft currently in the simulation (id, speed, lat, lon) is
@@ -31,12 +28,11 @@ Architecture
 2. BlueSky's ECHO messages are forwarded to InteractiveAI as an event.
 
 3. Aircraft/weather/volcanic lifecycle (polled, event-driven). The RL agent
-   deletes an aircraft once it reaches its destination (see `update()` in
-   ai4realnet_deploy_RL_batch.py), and the disturbance_generator plugin
+   deletes an aircraft once it reaches its destination, and the disturbance_generator plugin
    spawns/removes WEATHER_CELL and VOLCANIC_CELL shapes. PUSH_INTERVAL_S poll
    checks traf.id and the areafilter shape set against the previous poll and
-   emits AIRCRAFT_SPAWNED / AIRCRAFT_REMOVED / WEATHER_CELL_* /
-   VOLCANIC_CELL_* events for whatever changed.
+   emits AIRCRAFT_SPAWNED / WEATHER_CELL_* / VOLCANIC_CELL_* events for
+   whatever changed.
 
 4. Aircraft area incursions (polled). Every PUSH_INTERVAL_S poll also checks
    each in-sector aircraft against restricted areas (a
@@ -104,7 +100,7 @@ _prev_area_incursions = set()  # (acid, shape_name) pairs currently inside a non
 
 # Event types whose lifecycle has a end. The "start" push leaves endDate empty if the end time is unknown.
 # The end of the event triggers an update to the same event_type with the endDate set.
-_OPEN_ENDED_EVENT_TYPES = {"WEATHER_CELL", "VOLCANIC_CELL", "AIRCRAFT_LOS"}
+_OPEN_ENDED_EVENT_TYPES = {"WEATHER_CELL", "VOLCANIC_CELL", "AIRCRAFT_LOS", "AIRCRAFT_SPAWNED"}
 
 # Labels for each event recording the startDate, so the update at end of life does not overwrite it.
 _open_condition_start = {}
@@ -423,17 +419,19 @@ def push_loop():
                 # For weather/volcanic disturbances, fetches the end date directly from the plugin's construction of the disturbance,
                 disturbance_end_dates = {name: _disturbance_end_date(name) for name in new_disturbances}
 
-            # Alert when an aircraft enters the sector or leaves it.
+            # Alert when an aircraft enters the sector or leaves it. 
             for acid in current_ids - _prev_aircraft_ids:
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} entered the sector",
                                   " ",
                                   "ROUTINE", False, None))
             for acid in _prev_aircraft_ids - current_ids:
-                EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_REMOVED",
+                EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} left the sector",
                                   " ",
-                                  "ROUTINE", False, None))
+                                  # Card auto-clears 2 minutes after the aircraft actually
+                                  # left, rather than the instant this push is processed.
+                                  "ROUTINE", True, sim_now() + timedelta(minutes=2)))
             _prev_aircraft_ids = current_ids
 
             # The 2nd to last element of the tuple tells event_worker whether this is the
@@ -511,8 +509,8 @@ def event_worker():
                     now = sim_now()
                     if resolved:
                         start = _open_condition_start.pop(key, now)
-                        # The observed end -- corrects any earlier scheduled_end estimate
-                        end = now
+                        # Close it at the caller's scheduled_end if given, otherwise right now.
+                        end = scheduled_end if scheduled_end is not None else now
                     else:
                         start = _open_condition_start.setdefault(key, now)
                         # Sets a scheduled end date if known in advance (WEATHER_CELL/VOLCANIC_CELL), None for AIRCRAFT_LOS,
