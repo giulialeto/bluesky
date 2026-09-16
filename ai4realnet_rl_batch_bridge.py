@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-ai4realnet_rl_batch_bridge.py
-
-HTTP bridge between BlueSky's AI4REALNET ATM use case 2 plugin and InteractiveAI.
+    AI4REALNET -  Deliverable 1.4 - HTTP bridge between BlueSky's AI4REALNET ATM use case 2 plugin and InteractiveAI
+    Authors: Giulia Leto
+    Date: Sept 2026
 
 This bridge boots BlueSky in detached mode, loads the ai4realnet_deploy_RL_batch plugin & scenario:
 
