@@ -117,3 +117,6 @@ bluesky/plugins/ai4realnet_deploy_RL_tools_batch/DEMO/
 
 # RL deployment plugin - unused files maybe worth keeping for future reference
 bluesky/plugins/ai4realnet_random_scenario_generator_with_obstacle_buffers.py
+
+# InteractiveAI connector bridge
+bluesky_http_bridge.py
