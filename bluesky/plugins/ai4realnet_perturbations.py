@@ -1,5 +1,5 @@
 """
-    AI4REALNET - Deliverable 1.4, Task 1.3 and 4.2 BlueSky plugin for generating weather and volcanic perturbations
+    AI4REALNET - Deliverable 1.3, Task 1.3 and 4.2 BlueSky plugin for generating weather and volcanic perturbations
     Authors: Giulia Leto
     Date: Nov 2025
 """

@@ -1,5 +1,5 @@
 """
-    AI4REALNET -  Deliverable 1.4 BlueSky plugin for generating random scenarios inside Lisbon FIR
+    AI4REALNET -  Deliverable 1.3 BlueSky plugin for generating random scenarios inside Lisbon FIR
     Authors: Giulia Leto
     Date: Nov 2025
 """
