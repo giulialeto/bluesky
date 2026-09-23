@@ -78,6 +78,8 @@ import bluesky as bs
 from bluesky import stack
 # Only to fetch the duration of the perturbation - the perturbations are generated from the bluesky scenario: `PLUGIN disturbance_generator`
 import bluesky.plugins.ai4realnet_perturbations as perturbations_plugin
+from bluesky.tools.aero import kts, ft
+from bluesky.traffic.route import Route
 
 app = Flask(__name__)
 CORS(app)
@@ -97,6 +99,49 @@ _prev_aircraft_ids = set()
 _prev_disturbance_shapes = set()
 _prev_los_pairs = set()
 _prev_area_incursions = set()  # (acid, shape_name) pairs currently inside a non-sector area shape
+
+# Saves each aircraft's own position at spawn time
+_aircraft_origin_wp = {}
+
+def _wp_label(route, idx):
+    """Human-readable label for route waypoint `idx` (0 for first, -1 for last):
+    - If the waypoint has a name, use that.
+    - If the waypoint is a lat/lon point, return the "lat, lon" coordinates instead of the name (names are auto-generated as 'ACID001', etc).
+    - If the waypoint is missing, return None."""
+    if not route.wpname:
+        return None
+    if route.wptype[idx] == Route.wplatlon:
+        return f"{route.wplat[idx]:.2f}, {route.wplon[idx]:.2f}"
+    return route.wpname[idx]
+
+def _latlon_label(lat, lon):
+    """ Format a lat/lon pair as a string with 2 decimals"""
+    return f"{lat:.2f}, {lon:.2f}"
+
+def _format_flight_level(alt_m):
+    """FLxxx label for a raw altitude in meters."""
+    return f"FL{round(alt_m / ft / 100):03d}"
+
+def _format_coord_string(value):
+    """Reformats a raw "lat,lon" string to 2 decimals."""
+    if not isinstance(value, str) or "," not in value:
+        return value
+    lat_str, _, lon_str = value.partition(",")
+    try:
+        lat, lon = float(lat_str), float(lon_str)
+    except ValueError:
+        return value
+    return _latlon_label(lat, lon)
+
+def _aircraft_origin_dest(acid, ac_idx):
+    """Origin/destination labels for one aircraft.
+    If the aircraft has explicit origin/destination set in the scenario, use those. Otherwise:
+    - for the origin, use the aircraft's own position when it spawned, if available, otherwise use NA.
+    - for the destination, use the last waypoint if available, otherwise use NA."""
+    route = bs.traf.ap.route[ac_idx]
+    origin = bs.traf.ap.orig[ac_idx] or _aircraft_origin_wp.get(acid) or 'NA'
+    dest = bs.traf.ap.dest[ac_idx] or _wp_label(route, -1) or 'NA'
+    return _format_coord_string(origin), _format_coord_string(dest)
 
 # Event types whose lifecycle has a end. The "start" push leaves endDate empty if the end time is unknown.
 # The end of the event triggers an update to the same event_type with the endDate set.
@@ -313,9 +358,11 @@ def build_context_payload():
     los_acids = _aircraft_in_los()
     airplanes = []
     for i in range(bs.traf.ntraf):
+        acid = bs.traf.id[i]
+        origin, dest = _aircraft_origin_dest(acid, i)
         airplanes.append({
-            "id_plane": bs.traf.id[i],
-            "Current_airspeed": float(bs.traf.gs[i]) * 1.94384,  # m/s -> knots
+            "id_plane": acid,
+            "Current_airspeed": float(bs.traf.gs[i]) / kts,  # m/s -> knots
             "Latitude": float(bs.traf.lat[i]),
             "Longitude": float(bs.traf.lon[i]),
             # True heading, degrees clockwise from north (0-360) -- matches
@@ -325,7 +372,7 @@ def build_context_payload():
             # backend/context-service/resources/ATM/schemas.py.
             "heading": float(bs.traf.hdg[i]),
             # True if another aircraft is currently inside this one's protected zone
-            "in_los": bs.traf.id[i] in los_acids,
+            "in_los": acid in los_acids,
         })
     return {
         "use_case": "ATM",
@@ -421,11 +468,21 @@ def push_loop():
 
             # Alert when an aircraft enters the sector or leaves it. 
             for acid in current_ids - _prev_aircraft_ids:
+                ac_idx = bs.traf.id2idx(acid)
+                # Aircraft's own position at spawn time
+                _aircraft_origin_wp[acid] = _latlon_label(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx])
+                origin, dest = _aircraft_origin_dest(acid, ac_idx)
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} entered the sector",
-                                  " ",
+                                  f"{acid}\n"
+                                  f"Type: {bs.traf.type[ac_idx]}\n"
+                                  f"Alt: {_format_flight_level(bs.traf.alt[ac_idx])}\n"
+                                  f"GS: {round(bs.traf.gs[ac_idx] / kts)} kts\n"
+                                  f"Origin: {origin}\n"
+                                  f"Dest: {dest}",
                                   "ROUTINE", False, None))
             for acid in _prev_aircraft_ids - current_ids:
+                _aircraft_origin_wp.pop(acid, None)
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} left the sector",
                                   " ",
