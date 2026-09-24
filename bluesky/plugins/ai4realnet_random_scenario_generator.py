@@ -52,7 +52,8 @@ class ScenarioGenerator(core.Entity):
         super().__init__()
         # print(f'initialised SCN_GEN at {self.scn_idx}')
         self.initialise_observation_flag = False
-        self.altitude = 350
+        self.altitude_ft = 35000 # ft
+        self.altitude_m = self.altitude_ft * 0.3048 # m
 
     def reset(self):
         # print(f'reset SCN_GEN at {self.scn_idx}')
@@ -84,7 +85,6 @@ class ScenarioGenerator(core.Entity):
         self._generate_random_aircraft(number_aircraft, sector_name, self.obstacle_names, latitude_bounds, longitude_bounds)
 
     def _generate_random_restricted_areas(self, num_obstacles: int):
-        altitude = 350
 
         # delete obstacles that are generated while iterating to find non overlapping obstacles
         all_obstacle_names = []
@@ -147,7 +147,7 @@ class ScenarioGenerator(core.Entity):
                 found_overlap = False
                 for k in range(0, len(obstacle_vertices[j])):
                     # check if the vertices of the obstacle are inside the other obstacles
-                    overlap = bs.tools.areafilter.checkInside(obstacle_names[i], np.array([obstacle_vertices[j][k][0]]), np.array([obstacle_vertices[j][k][1]]), np.array([altitude]))[0]
+                    overlap = bs.tools.areafilter.checkInside(obstacle_names[i], np.array([obstacle_vertices[j][k][0]]), np.array([obstacle_vertices[j][k][1]]), np.array([self.altitude_m]))[0]
                     if overlap:
                         overlap_list.append(obstacle_names[j])
                         break #break vertex loop
@@ -157,7 +157,7 @@ class ScenarioGenerator(core.Entity):
                     else:
                         interpolated_points = functions.interpolate_along_obstacle_vertices(obstacle_vertices[j][k], obstacle_vertices[j][k+1])
                     for point in interpolated_points:
-                        overlap = bs.tools.areafilter.checkInside(obstacle_names[i], np.array([point[0]]), np.array([point[1]]), np.array([altitude]))[0]
+                        overlap = bs.tools.areafilter.checkInside(obstacle_names[i], np.array([point[0]]), np.array([point[1]]), np.array([self.altitude_m]))[0]
                         if overlap:
                             overlap_list.append(obstacle_names[j])
                             found_overlap = True
@@ -227,7 +227,7 @@ class ScenarioGenerator(core.Entity):
                     sector_name,
                     np.array([obstacle_centre_lat]),
                     np.array([obstacle_centre_lon]),
-                    np.array([self.altitude])
+                    np.array([self.altitude_m])
                 )[0] 
             self.obstacle_centre_lat.append(obstacle_centre_lat)
             self.obstacle_centre_lon.append(obstacle_centre_lon)
@@ -237,8 +237,8 @@ class ScenarioGenerator(core.Entity):
         Generate random scenario with random initial positions and random destinations for the aircraft
         """
         # HARDCODED
-        orig_altitude = self.altitude
-        dest_altitude = self.altitude
+        orig_altitude = self.altitude_m
+        dest_altitude = self.altitude_m
         orig_speed = 150  # m/s
 
         # if the aircraft is generated inside the sector, keep it, otherwise regenerate
