@@ -12,10 +12,12 @@ import numpy as np
 import pandas as pd
 import os, datetime
 from pathlib import Path
+from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import pareto
 
 # Global variables
 PLUGIN_DIR = Path(__file__).resolve().parent
 MODELS_DIR = PLUGIN_DIR / "ai4realnet_deploy_RL_models"
+deploy_RL = None
 
 # print(f"Current directory is {os.getcwd()}.")
 
@@ -24,6 +26,7 @@ save_dir = 'ai4realnet_deploy_RL_batch/generated_scenarios'
 
 # Plugin initialization function
 def init_plugin():
+    global deploy_RL
     deploy_RL = DeployRL()
     # Configuration parameters
     config = {
@@ -46,6 +49,8 @@ class DeployRL(core.Entity):
         self.scentime = []
         self.scencmd = []
         self.start_updates = False
+        self.pareto_directory = None
+        self.selected_policy_id = None
         self.max_sim_time = 3600  # seconds
         os.makedirs(f'scenario/{save_dir}', exist_ok=True)
 
@@ -141,6 +146,13 @@ class DeployRL(core.Entity):
         elif self.algorithm.lower() in ('ddpg'):
             self.model = DDPG.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
 
+        self.pareto_directory = None
+        self.selected_policy_id = None
+        if (self.env_name.lower(), self.algorithm.lower()) == (pareto.DEMO_ENV, pareto.DEMO_ALGORITHM):
+            model_dir = MODELS_DIR / self.env_name / f"{self.env_name}_{self.algorithm}"
+            self.pareto_directory = pareto.prepare_demo_checkpoints(model_dir)
+            self.select_policy(1)
+
         # logging
         self.log_buffer = []   # temporary storage
         current_working_dir = os.getcwd()
@@ -214,6 +226,16 @@ class DeployRL(core.Entity):
         stack.process(f'OP')
         stack.process(f'DTMULT 5000')
 
+
+    def select_policy(self, policy_id):
+        """Called under the bridge simulation lock, between agent updates."""
+        if self.pareto_directory is None:
+            raise RuntimeError("Pareto selection is available for the demo SAC environment only")
+        path = pareto.checkpoint_path(self.pareto_directory, policy_id)
+        # Keep the previous model and selection if loading fails.
+        model = type(self.model).load(str(path), env=None)
+        self.model = model
+        self.selected_policy_id = policy_id
 
     @stack.command
     def end_scen(self):
