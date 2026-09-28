@@ -103,6 +103,11 @@ _prev_area_incursions = set()  # (acid, shape_name) pairs currently inside a non
 # Saves each aircraft's own position at spawn time
 _aircraft_origin_wp = {}
 
+# Aircraft currently selected in InteractiveAI's map (POSTed by the frontend
+# to /select-aircraft when the operator clicks an aircraft).
+_selected_acid = None
+_selected_acid_lock = threading.Lock()
+
 def _wp_label(route, idx):
     """Human-readable label for route waypoint `idx` (0 for first, -1 for last):
     - If the waypoint has a name, use that.
@@ -143,12 +148,34 @@ def _aircraft_origin_dest(acid, ac_idx):
     dest = bs.traf.ap.dest[ac_idx] or _wp_label(route, -1) or 'NA'
     return _format_coord_string(origin), _format_coord_string(dest)
 
+def _aircraft_info_description(acid, ac_idx):
+    """Type/Alt/GS/Origin/Dest block for one aircraft, used by the
+    AIRCRAFT_SPAWNED "entered the sector" card."""
+    origin, dest = _aircraft_origin_dest(acid, ac_idx)
+    return (
+        f"Type: {bs.traf.type[ac_idx]}\n"
+        f"Alt: {_format_flight_level(bs.traf.alt[ac_idx])}\n"
+        f"GS: {round(bs.traf.gs[ac_idx] / kts)} kts\n"
+        f"Origin: {origin}\n"
+        f"Dest: {dest}"
+    )
+
+def _aircraft_info_description_live(acid, ac_idx):
+    """Add the current positin to the data fetched by _aircraft_info_description(). Used for Information card popping up when the user clicks on the card."""
+    return (
+        f"{_aircraft_info_description(acid, ac_idx)}\n"
+        f"Current Position: {_latlon_label(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx])}"
+    )
+
 # Event types whose lifecycle has a end. The "start" push leaves endDate empty if the end time is unknown.
 # The end of the event triggers an update to the same event_type with the endDate set.
-_OPEN_ENDED_EVENT_TYPES = {"WEATHER_CELL", "VOLCANIC_CELL", "AIRCRAFT_LOS", "AIRCRAFT_SPAWNED"}
+_OPEN_ENDED_EVENT_TYPES = {"WEATHER_CELL", "VOLCANIC_CELL", "AIRCRAFT_LOS", "AIRCRAFT_SPAWNED", "AIRCRAFT_INFO"}
 
 # Labels for each event recording the startDate, so the update at end of life does not overwrite it.
 _open_condition_start = {}
+
+# records the InteractiveAI event-service's id_event for each open-ended event, so the end-of-life update can be sent to the same event.
+_event_ids = {}
 
 # opfab-client's public client id/secret, base64'd -- same constant the
 # PowerGrid example uses (usecases_examples/PowerGrid/app/models/Communicate.py)
@@ -253,11 +280,20 @@ def cab_auth_headers():
     }
 
 
-def _post_with_relogin(url, payload):
+def _post_with_token_refresh(url, payload):
     response = requests.post(url, headers=cab_auth_headers(), json=payload, timeout=15)
     if response.status_code == 401:
         cab_login()
         response = requests.post(url, headers=cab_auth_headers(), json=payload, timeout=15)
+    response.raise_for_status()
+    return response
+
+
+def _delete_with_token_refresh(url):
+    response = requests.delete(url, headers=cab_auth_headers(), timeout=15)
+    if response.status_code == 401:
+        cab_login()
+        response = requests.delete(url, headers=cab_auth_headers(), timeout=15)
     response.raise_for_status()
     return response
 
@@ -359,7 +395,6 @@ def build_context_payload():
     airplanes = []
     for i in range(bs.traf.ntraf):
         acid = bs.traf.id[i]
-        origin, dest = _aircraft_origin_dest(acid, i)
         airplanes.append({
             "id_plane": acid,
             "Current_airspeed": float(bs.traf.gs[i]) / kts,  # m/s -> knots
@@ -384,7 +419,7 @@ def build_context_payload():
 
 def push_context():
     url = CONFIG["cab_url"] + "cabcontext/api/v1/contexts"
-    _post_with_relogin(url, build_context_payload())
+    _post_with_token_refresh(url, build_context_payload())
 
 
 def push_event(*, id_plane, system, event_type, title, description,
@@ -396,8 +431,10 @@ def push_event(*, id_plane, system, event_type, title, description,
 
     start_date defaults to current sim time, unless an update to an existing card is being pushed, for which the original start_date is preserved.
 
-    The endDate is set in sim time when available. Once endDate passes, the card is automatically removed from the active alerts. 
-    Pass duration_minutes=None (and no end_date) to leave the card open-ended until a later update sets the endDate."""
+    The endDate is set in sim time when available. Once endDate passes, the card is automatically removed from the active alerts.
+    Pass duration_minutes=None (and no end_date) to leave the card open-ended until a later update sets the endDate.
+
+    Returns the created/updated event's id_event or None if the response didn't include one."""
     now = sim_now()
     if end_date is not None:
         end_date_iso = end_date.isoformat()
@@ -417,7 +454,17 @@ def push_event(*, id_plane, system, event_type, title, description,
         "is_active": is_active,
     }
     url = CONFIG["cab_url"] + "cab_event/api/v1/events"
-    _post_with_relogin(url, payload)
+    response = _post_with_token_refresh(url, payload)
+    try:
+        return response.json().get("id_event")
+    except ValueError:
+        return None
+
+
+def delete_event(id_event):
+    """Deletes an event and its card. This makes the card disappear instead of setting an endDate and closing it."""
+    url = CONFIG["cab_url"] + f"cab_event/api/v1/event/{id_event}"
+    _delete_with_token_refresh(url)
 
 
 def _push_echo_event(text, flags):
@@ -445,7 +492,7 @@ def _push_echo_event(text, flags):
 def push_loop():
     """Background thread: logs in, then periodically pushes context and
     diffs the world for lifecycle events."""
-    global _prev_aircraft_ids, _prev_disturbance_shapes, _prev_los_pairs, _prev_area_incursions
+    global _prev_aircraft_ids, _prev_disturbance_shapes, _prev_los_pairs, _prev_area_incursions, _selected_acid
     while not cab_login():
         time.sleep(5)
     while _sim_running:
@@ -471,15 +518,9 @@ def push_loop():
                 ac_idx = bs.traf.id2idx(acid)
                 # Aircraft's own position at spawn time
                 _aircraft_origin_wp[acid] = _latlon_label(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx])
-                origin, dest = _aircraft_origin_dest(acid, ac_idx)
                 EVENT_QUEUE.put(("aircraft", acid, "AIRCRAFT_SPAWNED",
                                   f"Aircraft {acid} entered the sector",
-                                  f"{acid}\n"
-                                  f"Type: {bs.traf.type[ac_idx]}\n"
-                                  f"Alt: {_format_flight_level(bs.traf.alt[ac_idx])}\n"
-                                  f"GS: {round(bs.traf.gs[ac_idx] / kts)} kts\n"
-                                  f"Origin: {origin}\n"
-                                  f"Dest: {dest}",
+                                  f"{acid}\n" + _aircraft_info_description(acid, ac_idx),
                                   "ROUTINE", False, None))
             for acid in _prev_aircraft_ids - current_ids:
                 _aircraft_origin_wp.pop(acid, None)
@@ -537,6 +578,25 @@ def push_loop():
                                   "ROUTINE", True, None))
             _prev_area_incursions = current_area_incursions
 
+            # Keep the selected aircraft's "<ACID> Information" card (set via
+            # /select-aircraft) live with the same update rate as the context push
+            with _selected_acid_lock:
+                selected = _selected_acid
+            if selected:
+                if selected in current_ids:
+                    ac_idx = bs.traf.id2idx(selected)
+                    EVENT_QUEUE.put(("aircraft", selected, "AIRCRAFT_INFO",
+                                      f"{selected} Information",
+                                      f"{selected}\n" + _aircraft_info_description_live(selected, ac_idx),
+                                      "ROUTINE", False, None))
+                else:
+                    # Left the sector while selected. Card is closed.
+                    EVENT_QUEUE.put(("aircraft", selected, "AIRCRAFT_INFO",
+                                      f"{selected} Information", " ", "ROUTINE", True, None))
+                    with _selected_acid_lock:
+                        if _selected_acid == selected:
+                            _selected_acid = None
+
         except Exception as exc:  # simulator must keep running even if CAB is unreachable
             print(f"[push_loop] failed to push context: {exc}")
         time.sleep(PUSH_INTERVAL_S)
@@ -564,18 +624,30 @@ def event_worker():
                     # the second as an update to the SAME card
                     key = (id_plane, event_type)
                     now = sim_now()
-                    if resolved:
-                        start = _open_condition_start.pop(key, now)
-                        # Close it at the caller's scheduled_end if given, otherwise right now.
-                        end = scheduled_end if scheduled_end is not None else now
+                    if resolved and event_type == "AIRCRAFT_INFO":
+                        # Dismiss the aircraft information card when the operator clicks on another aircraft or when the aircraft leaves the sector.
+                        _open_condition_start.pop(key, None)
+                        id_event = _event_ids.pop(key, None)
+                        if id_event:
+                            delete_event(id_event)
+                        else:
+                            print(f"[event_worker] no known id_event for {key}; nothing to delete")
                     else:
-                        start = _open_condition_start.setdefault(key, now)
-                        # Sets a scheduled end date if known in advance (WEATHER_CELL/VOLCANIC_CELL), None for AIRCRAFT_LOS,
-                        # which leaves the card open until the "resolved" push supplies the end time.
-                        end = scheduled_end
-                    push_event(id_plane=id_plane, system=system, event_type=event_type,
-                               title=title, description=description, criticality=criticality,
-                               start_date=start, end_date=end, duration_minutes=None)
+                        if resolved: # any event other than AIRCRAFT_INFO
+                            start = _open_condition_start.pop(key, now)
+                            # Close it at the caller's scheduled_end if given, otherwise right now.
+                            end = scheduled_end if scheduled_end is not None else now
+                        else:
+                            start = _open_condition_start.setdefault(key, now)
+                            # Sets a scheduled end date if known in advance (WEATHER_CELL/VOLCANIC_CELL), None for AIRCRAFT_LOS,
+                            # which leaves the card open until the "resolved" push supplies the end time.
+                            end = scheduled_end
+                        id_event = push_event(id_plane=id_plane, system=system, event_type=event_type,
+                                   title=title, description=description, criticality=criticality,
+                                   start_date=start, end_date=end, duration_minutes=None)
+                        # Cached so the end-of-life update can be sent to the same event.
+                        if id_event:
+                            _event_ids[key] = id_event
                 else:
                     # Everything else uses a the default 5-minute auto-expiry for notifications.
                     push_event(id_plane=id_plane, system=system, event_type=event_type,
@@ -678,6 +750,41 @@ def update_flight_plan():
             stack.stack(f"ADDWPT {acid} {wp['wplat']},{wp['wplon']}")
 
     return jsonify({"message": "ok", "acid": acid})
+
+
+@app.route("/select-aircraft", methods=["POST"])
+def select_aircraft():
+    """Called by InteractiveAI's frontend when the operator clicks an aircraft
+    on the map (entities/ATM/CAB/Context.vue). Body: {"id_plane": "AC33"} to
+    select it, or {"id_plane": null} to deselect.
+
+    Pushes an immediate AIRCRAFT_INFO card for the newly selected aircraft. 
+    Closes the previously selected aircraft's card if it's being
+    switched away from."""
+    global _selected_acid
+    data = request.get_json(force=True, silent=True) or {}
+    new_acid = data.get("id_plane") or None
+
+    with _selected_acid_lock:
+        old_acid = _selected_acid
+        _selected_acid = new_acid
+
+    if old_acid and old_acid != new_acid:
+        EVENT_QUEUE.put(("aircraft", old_acid, "AIRCRAFT_INFO",
+                          f"{old_acid} Information", " ", "ROUTINE", True, None))
+
+    if new_acid and new_acid != old_acid:
+        with _sim_lock:
+            in_sim = new_acid in set(bs.traf.id)
+            ac_idx = bs.traf.id2idx(new_acid) if in_sim else None
+            description = (
+                f"{new_acid}\n" + _aircraft_info_description_live(new_acid, ac_idx) if in_sim else None
+            )
+        if description is not None:
+            EVENT_QUEUE.put(("aircraft", new_acid, "AIRCRAFT_INFO",
+                              f"{new_acid} Information", description, "ROUTINE", False, None))
+
+    return jsonify({"ok": True, "id_plane": new_acid})
 
 
 @app.route("/event/trigger", methods=["POST"])
