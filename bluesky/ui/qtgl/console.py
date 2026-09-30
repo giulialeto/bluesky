@@ -171,7 +171,6 @@ class Console(QWidget):
                 self.set_cmdline(newcmd, pos + len(text))
             return
 
-
         newcmd = self.command_line
         cursorpos = None
         if event.key() >= Qt.Key.Key_Space and event.key() <= Qt.Key.Key_AsciiTilde \
