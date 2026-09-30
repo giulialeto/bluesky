@@ -53,6 +53,8 @@ High priority Alerts in InteractiveAI are triggered:
 
 ## Installation and Usage
 
+The connector works with the Pareto front branch of InteractiveAI: https://github.com/ainetus/InteractiveAI/tree/powergrid-pareto-selection
+
 1. Run InteractiveAI following the instructions provided in the [README](https://github.com/ainetus/InteractiveAI/blob/main/README.md) of the interface: 
 In short, required steps are:
 `export VITE_ATM_SIMU=http://localhost:6100`
