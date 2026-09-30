@@ -614,9 +614,9 @@ def health():
 
 
 def _pareto_agent():
-    module = sys.modules.get("bluesky.plugins.ai4realnet_deploy_RL_batch")
+    module = sys.modules.get("bluesky.plugins.ai4realnet_deploy_RL_batch_MORL")
     agent = getattr(module, "deploy_RL", None)
-    if agent is None or agent.pareto_directory is None:
+    if agent is None or getattr(agent, "pareto_catalog", None) is None:
         return None
     return agent
 
@@ -627,8 +627,7 @@ def pareto_front():
         agent = _pareto_agent()
         if agent is None:
             return jsonify({"error": "Start the demo RL batch scenario to select a checkpoint."}), 409
-        from bluesky.plugins.ai4realnet_deploy_RL_tools_batch.pareto import front_payload
-        return jsonify(front_payload(agent.selected_policy_id))
+        return jsonify(agent.front_payload())
 
 
 @app.route("/policy", methods=["POST"])
@@ -750,12 +749,12 @@ def main():
                          help="InteractiveAI frontend base URL, trailing slash required")
     parser.add_argument("--cab-user", default="atm_user")
     parser.add_argument("--cab-password", default="test")
-    parser.add_argument("--plugin", default="deployRL_batch",
+    parser.add_argument("--plugin", default="deployRL_batch_MORL",
                          help="Plugin to load (matches plugin_name in "
-                              "ai4realnet_deploy_RL_batch.py's init_plugin()). "
+                              "ai4realnet_deploy_RL_batch_MORL.py's init_plugin()). "
                               "Pass 'None' (case-insensitive) or an empty string to skip "
                               "loading a plugin and load --scenario with plain IC instead ")
-    parser.add_argument("--scenario", default="ai4realnet_deploy_RL_batch/ai4realnet_deploy_RL_batch.scn",
+    parser.add_argument("--scenario", default="ai4realnet_deploy_RL_MORL/ai4realnet_deploy_RL_MORL_single_scn.scn",
                          help="Path passed to DETACHED_BATCH (or IC if --plugin is None), relative to settings.cfg's "
                               "scenario_path ('scenario/')")
     parser.add_argument("--push-interval", type=float, default=PUSH_INTERVAL_S,

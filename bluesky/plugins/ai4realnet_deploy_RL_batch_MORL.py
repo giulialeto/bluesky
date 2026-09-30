@@ -1,5 +1,5 @@
 """
-    AI4REALNET -  Deliverable 1.3 BlueSky plugin for deploying RL-based model in batch scenarios
+    AI4REALNET -  Deliverable 1.4 - BlueSky plugin for deploying RL-based model in batch scenarios, adapted for Multi-Objective Reinforcement Learning (MORL) with Pareto front selection.
     Authors: Giulia Leto
     Date: Nov 2025
 """
@@ -12,10 +12,12 @@ import numpy as np
 import pandas as pd
 import os, datetime
 from pathlib import Path
+from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import pareto
 
 # Global variables
 PLUGIN_DIR = Path(__file__).resolve().parent
 MODELS_DIR = PLUGIN_DIR / "ai4realnet_deploy_RL_models"
+deploy_RL = None
 
 # print(f"Current directory is {os.getcwd()}.")
 
@@ -24,11 +26,12 @@ save_dir = 'ai4realnet_deploy_RL_batch/generated_scenarios'
 
 # Plugin initialization function
 def init_plugin():
+    global deploy_RL
     deploy_RL = DeployRL()
     # Configuration parameters
     config = {
         # The name of your plugin
-        'plugin_name':     'DeployRL_batch',
+        'plugin_name':     'DeployRL_batch_MORL',
         # The type of this plugin.
         'plugin_type':     'sim',
         }
@@ -46,6 +49,9 @@ class DeployRL(core.Entity):
         self.scentime = []
         self.scencmd = []
         self.start_updates = False
+        self.pareto_directory = None
+        self.pareto_catalog = None
+        self.selected_policy_id = None
         self.max_sim_time = 3600  # seconds
         os.makedirs(f'scenario/{save_dir}', exist_ok=True)
 
@@ -99,6 +105,9 @@ class DeployRL(core.Entity):
 
         self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        pareto_folder = None     # `pareto_front <FOLDER>`; None = demo copies (see below)
+        pareto_index = None
+
         for i, cmd in enumerate(new_scencmd):
             line = cmd.strip().lower()
 
@@ -124,9 +133,20 @@ class DeployRL(core.Entity):
                 else:
                     print("[DeployRL] ERROR: deploy_RL must be: deploy_RL <env_name> <algorithm>")
                 index_to_remove = i
-                
-        new_scencmd.pop(index_to_remove)  # remove deploy_RL line after processing
-        new_scentime.pop(index_to_remove) # remove corresponding time entry
+
+            # Parse: pareto_front DEMO|FOLDER  (which checkpoints the Pareto tab offers)
+            elif line.startswith("pareto_front"):
+                parts = cmd.strip().split(None, 1)   # keep the folder name's case
+                if len(parts) == 2:
+                    pareto_folder = None if parts[1].strip().lower() == "demo" else parts[1].strip()
+                else:
+                    print("[DeployRL] ERROR: pareto_front must be: pareto_front DEMO|<FOLDER>")
+                pareto_index = i
+
+        # Remove the lines handled here (highest index first so the others stay valid)
+        for idx in sorted((i for i in (index_to_remove, pareto_index) if i is not None), reverse=True):
+            new_scencmd.pop(idx)
+            new_scentime.pop(idx)
         
         self.scentime = new_scentime
         self.scencmd  = new_scencmd
@@ -140,6 +160,26 @@ class DeployRL(core.Entity):
             self.model = PPO.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
         elif self.algorithm.lower() in ('ddpg'):
             self.model = DDPG.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
+
+        self.pareto_directory = None
+        self.pareto_catalog = None
+        self.selected_policy_id = None
+        try:
+            if pareto_folder is not None:
+                self.pareto_catalog = pareto.catalog_from_folder(pareto_folder, MODELS_DIR / self.env_name)
+            elif (self.env_name.lower(), self.algorithm.lower()) == (pareto.DEMO_ENV, pareto.DEMO_ALGORITHM):
+                model_dir = MODELS_DIR / self.env_name / f"{self.env_name}_{self.algorithm}"
+                self.pareto_catalog = pareto.demo_catalog(model_dir)
+            if self.pareto_catalog is not None:
+                self.pareto_directory = self.pareto_catalog.directory
+                self.select_policy(self.pareto_catalog.points[0]["id"])
+        except Exception as exc:
+            print(f"[DeployRL] ERROR: could not set up the Pareto checkpoints: {exc}")
+            self.pareto_directory = None
+            self.pareto_catalog = None
+            self.selected_policy_id = None
+            if pareto_folder is not None:
+                return   # the scenario explicitly asked for this front: do not run without it
 
         # logging
         self.log_buffer = []   # temporary storage
@@ -214,6 +254,23 @@ class DeployRL(core.Entity):
         stack.process(f'OP')
         stack.process(f'DTMULT 5000')
 
+
+    def select_policy(self, policy_id):
+        """Called under the bridge simulation lock, between agent updates."""
+        if self.pareto_catalog is None:
+            raise RuntimeError("Pareto selection is not enabled for this scenario "
+                               "(demo SAC environment, or 'pareto_front <FOLDER>')")
+        path = self.pareto_catalog.checkpoint_path(policy_id)
+        # Keep the previous model and selection if loading fails.
+        model = type(self.model).load(str(path), env=None)
+        self.model = model
+        self.selected_policy_id = policy_id
+        checkpoint = next(p["checkpoint"] for p in self.pareto_catalog.points if p["id"] == policy_id)
+        print(f"[DeployRL] Selected Pareto policy {policy_id} ({checkpoint}); active from the next agent decision")
+
+    def front_payload(self):
+        """Pareto front for the InteractiveAI tab."""
+        return self.pareto_catalog.payload(self.selected_policy_id)
 
     @stack.command
     def end_scen(self):
