@@ -1,0 +1,38 @@
+#-------------------------------------------------------------------------------
+#   AI4REALNET D1.4 BlueSky scenario for testing the RL models on random 
+#   Authors: Giulia Leto
+#   Date: Nov 2025
+#
+#   Instructions: 
+#   - in BlueSky, load 'PLUGIN deployRL_batch',
+#   - load the scenario using 'DETACHED_BATCH ai4realnet_deploy_RL_MORL/ai4realnet_deploy_RL_MORL_single_scn.scn'
+#     (a 'repeats' line is required: without it the plugin does not start the scenario)
+#   - with the InteractiveAI bridge, run it in plugin mode (the default), not '--plugin None'
+#
+#   Available Environments: 
+#   - StaticObstacleEnv-v0, 
+#   - StaticObstacleCREnv-v0, 
+#   - StaticObstacleSectorEnv-v0, 
+#   - StaticObstacleSectorCREnv-v0
+#
+#   Available Algorithms: sac, ddpg, td3, ppo
+#-------------------------------------------------------------------------------
+
+00:00:00.00>PLUGIN scenario_generator
+00:00:00.00>PLUGIN disturbance_generator
+# initialize_scenario <N_AC>, <N_OBSTACLES>
+00:00:00.00> initialize_scenario 50, 5
+00:00:00.00> perturbation weather on
+00:00:00.00> perturbation volcanic on
+# deploy_RL <ENVIRONMENT>, <ALGORITHM>
+# 00:00:00.00> deploy_RL StaticObstacleEnv-v0 SAC
+00:00:00.00> deploy_RL StaticObstacleCREnv-v1 SAC
+# 00:00:00.00> deploy_RL StaticObstacleSectorEnv-v0 SAC
+# 00:00:00.00> deploy_RL StaticObstacleSectorCREnv-v0 SAC
+# pareto_front <DEMO|FOLDER>: checkpoints offered by the InteractiveAI Pareto front tab
+# FOLDER = MORL run folder (dol_progress.json + iterations/iter_XXX/models/model.zip), looked up in
+# ai4realnet_deploy_RL_models/<env>/ or given as an absolute path; DEMO = identical copies of the SAC model
+00:00:00.00> pareto_front bluesky_sb3_SP
+00:00:00.00>OP
+# repeats <N_SCN>
+00:00:00.00>repeats 1

@@ -11,26 +11,27 @@
 ## Overview
 The release contains a connector between BlueSky and InteractiveAI, developed to enable the interaction between Flow Management Positions (FMPs) and RL agents, in the context of ATM.UC2 (path planning in the presence of restricted areas).
 
-BlueSky is the engine of the simulations. It is used to simulate scenarios, synthetic or historical, in which the aircraft are controlled by an RL agent via BlueSky's plugins (ai4realnet_deploy_RL_batch.py, see Deliverable 1.3). InteractiveAI is the frontend interface with which the FMPs interact. The state of the simulation is pushed as context to InteractiveAI, while discrete events (such as the occurrence of losses of separation or the incursions in restricted areas) trigger notifications that are displayed to the user, with various degrees of urgency. 
+BlueSky is the engine of the simulations. It is used to simulate scenarios, synthetic or historical, in which the aircraft are controlled by an RL agent via BlueSky's plugins (ai4realnet_deploy_RL_batch.py, see Deliverable 1.3). InteractiveAI is the frontend interface with which the FMPs interact. The state of the simulation is pushed as context to InteractiveAI, while discrete events (such as the occurrence of losses of separation or the incursions in restricted areas) trigger notifications that are displayed to the user, with various degrees of urgency.
 
-The connector supports any RL agents trained with BlueSky-Gym's StaticObstacleCREnv-v1 environment, including the Multi-objective RL agent trained with AI4REALNET's MORL-DOL. The connector also supports the perturbation agent (i.e., the occurrence of weather and volcanic cells).
+The connector supports any RL agents trained with BlueSky-Gym's StaticObstacleCREnv-v1 environment, including the Multi-objective RL agent trained with AI4REALNET's MORL-DOL. The connector also supports an interface, through which the user can select a design point on the pareto front generated during MORL training. 
+The connector also supports the perturbation agent (i.e., the occurrence of weather and volcanic cells).
 
 ### References
-InteractiveAI: https://github.com/ainetus/InteractiveAI > **TODO:** Add reference here.
+InteractiveAI: Mussi, M., Metelli, A. M., Restelli, M., Losapio, G., Bessa, R. J., Boos, D., Borst, C., Leto, G., Castagna, A., Chavarriaga, R., Dias, D., Egli, A., Eisenegger, A., El Manyari, Y., Fuxjäger, A., Geraldes, J., Hamouche, S., Hassouna, M., Lemetayer, B., … Zanotti, G. (2025). Human-AI interaction in safety-critical network infrastructures. iScience, 28(9), 113400. https://doi.org/10.1016/j.isci.2025.113400
+Link to the repository: https://github.com/ainetus/InteractiveAI 
 
-MORL: **TODO:** Add reference here.
+MORL: Mossalam, Hossam, Assael, Yannis M., Roijers, Diederik M., & Whiteson, Shimon. "Multi-Objective Deep Reinforcement Learning", arXiv:1610.02707, https://doi.org/10.48550/arXiv.1610.02707 (2016)
 
-BlueSky: Hoekstra, Jacco M. and Ellerbroek, Joost."BlueSky ATC Simulator Project: an Open Data and Open Source Approach", 7th International Conference on Research in Air Transportation. https://www.researchgate.net/publication/304490055_BlueSky_ATC_Simulator_Project_an_Open_Data_and_Open_Source_Approach (2016)
+BlueSky: Hoekstra, Jacco M. and Ellerbroek, Joost. "BlueSky ATC Simulator Project: an Open Data and Open Source Approach", 7th International Conference on Research in Air Transportation. https://www.researchgate.net/publication/304490055_BlueSky_ATC_Simulator_Project_an_Open_Data_and_Open_Source_Approach (2016)
 
 BlueSky-Gym: Groot, D. Janthony and Leto, Giulia and Vlaskin, Aleksandr and Moec, Adam and Ellerbroek, Joost. "BlueSky-Gym: Reinforcement Learning Environment for Air Traffic Applications", 14th SESAR Innovation Days. https://www.sesarju.eu/sites/default/files/documents/sid/2024/papers/SIDs_2024_paper_021%20final.pdf (2024).
 
 ## Features
 The following environments are supported:
-- StaticObstacleEnv-v0
 - StaticObstacleCREnv-v1
 
+<!-- TODO: - StaticObstacleEnv-v0 -->
 <!-- TODO: - StaticObstacleSectorEnv-v0 -->
-
 <!-- TODO: - StaticObstacleSectorCREnv-v1 -->
 
 Models supported are:
@@ -43,11 +44,8 @@ Information notifications in InteractiveAI are triggered:
 - when an aircraft enters/leaves the sector
 - when a weather/volcanic cell is cleared
 
-
 Medium priority Alerts in InteractiveAI are triggered:
 - when an weather/volcanic cell is detected
-<!-- TODO: - when a conflict is detected within 5 minutes? -->
-
 
 High priority Alerts in InteractiveAI are triggered:
 - when a loss of separation occurs
@@ -88,35 +86,64 @@ pip install stable_baselines3
 
 Running the connector:
 ```bash 
-python InteractiveAI_connectors/ai4realnet_rl_batch_bridge.py --port 6100 --cab-url http://localhost:3200/ --cab-user atm_user --cab-password test --plugin None --scenario ai4realnet_deploy_RL_batch/ai4realnet_deploy_RL_single_scn.scn
+python InteractiveAI_connectors/ai4realnet_rl_batch_bridge.py --port 6100 --cab-url http://localhost:3200/ --cab-user atm_user --cab-password test
 ```
 
 Other (optional) arguments are available. An example of such features is the speed of the simulation.
-
-
 
 The connector also supports display and interaction with batch scenarios in InteractiveAI, for experiments with repeated conditions. This can be achieved through the plugin `ai4realnet_deploy_RL_batch.py`.
 For this case, run the connector as follows:
 ```bash
 python InteractiveAI_connectors/ai4realnet_rl_batch_bridge.py --port 6100 --cab-url http://localhost:3200/ --cab-user atm_user --cab-password test
+ --scenario ai4realnet_deploy_RL_MORL/ai4realnet_deploy_RL_MORL_batch.scn```
 ```
 
-### Pareto checkpoint selection
-
+## Pareto checkpoint selection
 With the default SAC batch scenario, InteractiveAI's ATM **Pareto front** tab
 selects the checkpoint that controls aircrafts. The bridge exposes
-`GET /pareto-front` and `POST /policy` with `{"policy_id": 1}` (IDs 1–5).
+`GET /pareto-front` and `POST /policy` with `{"policy_id": 1}` (for example for IDs 1–5).
 The selection is confirmed only after the checkpoint loads successfully and
-takes effect at the next RL decision. It remains selected across batch repeats;
-restarting the bridge selects policy 1 again. Plain `--plugin None` mode does
-not support checkpoint selection.
+takes effect at the next RL decision.
 
-This is a demo front, all five checkpoints initially contain identical weights,
-so changing points does not yet change flight behaviour.
-The example catalog is in `bluesky/plugins/ai4realnet_deploy_RL_tools_batch/pareto.py`.
-On first load, the plugin copies the existing model to `pareto/policy_1.zip`
-through `pareto/policy_5.zip` beside the original SAC `model.zip`. Replace demo catalog with trained models.
+If a batch scenario is used, the checkpoint remains selected across batch repeats;
+restarting the bridge selects policy 1 again.
 
+### Demo
+A demo can be run adding the following command to the scenario:
+```
+00:00:00.00> pareto_front DEMO
+```
+
+This uses the existing selected model (e.g., SAC), not trained with the MORL framework, to build a demo front.
+All five checkpoints initially contain identical weights, so changing points does not change flight behaviour.
+
+The demo is loaded by default if the `pareto_front` line is absent from the plugin.
+
+#### Selecting the checkpoint catalog: `pareto_front`
+
+A scenario chooses which checkpoints the Pareto tab offers with one line:
+
+```
+00:00:00.00> pareto_front <FOLDER>
+```
+
+`FOLDER` is an absolute path, or a folder name inside  `bluesky/plugins/ai4realnet_deploy_RL_models/<env>/`. The name keeps its capitalisation.
+Every MORL run folder has the same layout:
+
+  ```
+  <FOLDER>/dol_progress.json
+  <FOLDER>/iterations/iter_XXX/models/model.zip
+  ```
+
+- `dol_progress.json` needs a `results` list. Each entry has `weights` and `returns` (one value per
+  objective: `reach_reward`, then `avoid_reward`) and `metadata.model_path`; the part of `model_path`
+  from `iterations/` locates the checkpoint. Policy ids follow the order of `results`, starting at 1.
+- Rewards shown in the tab are the `returns` in the file.
+- If the folder, `dol_progress.json` or a checkpoint is missing or malformed, the plugin prints an  error and does not start the scenario. The checkpoints must be compatible with the model loaded by `deploy_RL`.
+
+The example catalog is build through `bluesky/plugins/ai4realnet_deploy_RL_tools_batch/pareto.py`.
+For the demo option, in first load the plugin copies the existing model to `pareto/policy_1.zip`
+through `pareto/policy_5.zip` beside the original SAC `model.zip`.
 
 ## Project Structure
 
@@ -124,6 +151,7 @@ The main BlueSky files used by the connector are:
 ```
 bluesky/
 └── plugins/
+    ├── ai4realnet_deploy_RL_batch_MORL.py
     ├── ai4realnet_deploy_RL_batch.py
     ├── ai4realnet_perturbations.py
     └── ai4realnet_random_scenario_generator.py
@@ -136,6 +164,7 @@ bluesky/
     ├── ai4realnet_deploy_RL_tools_batch/
     │   ├── __init__.py
     │   ├── constants.py
+    │   ├── pareto.py
     │   ├── functions.py
     │   └── READ_ME.md
     └── ai4realnet_deploy_RL_models/
@@ -143,15 +172,16 @@ bluesky/
 The scenario files containing the data on which the models are tested can be found in the following:
 ```
 scenario/
-└── ai4realnet_deploy_RL_batch/
-    ├── ai4realnet_deploy_RL_single_scn.scn or your own customised scenario
+└── ai4realnet_deploy_RL_MORL/
+    ├── ai4realnet_deploy_RL_MORL_single_scn.scn or your own customised scenario
+    ├── ai4realnet_deploy_RL_MORL_batch.scn or your own customised scenario
     ├── config_screen.scn
     ├── sector.scn
     └── generated_scenarios/
 ```
 The above folder `generated_scenarios` contains the scenarios generated while running the RL deployment, saved through saveic.
 
-The scenario used in the script above (ai4realnet_deploy_RL_single_scn.scn) for running the connector uses a synthetic scenario generator, as in the format below.
+The default scenario used for running the connector (ai4realnet_deploy_RL_MORL_single_scn.scn) uses a synthetic scenario generator, as in the format below.
 ```
 00:00:00.00>PLUGIN scenario_generator
 00:00:00.00>PLUGIN disturbance_generator
@@ -182,6 +212,7 @@ Alternatively, the historical data can be used in by replacing the first six lin
 
 ## Authors
 - [Giulia Leto](https://github.com/giulialeto)
+- [Anatolii Korol](https://github.com/akorol98)
 
 ### Contributors
 
