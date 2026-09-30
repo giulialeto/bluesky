@@ -101,6 +101,23 @@ For this case, run the connector as follows:
 python InteractiveAI_connectors/ai4realnet_rl_batch_bridge.py --port 6100 --cab-url http://localhost:3200/ --cab-user atm_user --cab-password test
 ```
 
+### Pareto checkpoint selection
+
+With the default SAC batch scenario, InteractiveAI's ATM **Pareto front** tab
+selects the checkpoint that controls aircrafts. The bridge exposes
+`GET /pareto-front` and `POST /policy` with `{"policy_id": 1}` (IDs 1–5).
+The selection is confirmed only after the checkpoint loads successfully and
+takes effect at the next RL decision. It remains selected across batch repeats;
+restarting the bridge selects policy 1 again. Plain `--plugin None` mode does
+not support checkpoint selection.
+
+This is a demo front, all five checkpoints initially contain identical weights,
+so changing points does not yet change flight behaviour.
+The example catalog is in `bluesky/plugins/ai4realnet_deploy_RL_tools_batch/pareto.py`.
+On first load, the plugin copies the existing model to `pareto/policy_1.zip`
+through `pareto/policy_5.zip` beside the original SAC `model.zip`. Replace demo catalog with trained models.
+
+
 ## Project Structure
 
 The main BlueSky files used by the connector are:
