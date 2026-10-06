@@ -52,6 +52,8 @@ class DeployRL(core.Entity):
         self.pareto_directory = None
         self.pareto_catalog = None
         self.selected_policy_id = None
+        self.policy_models = {}      # loaded models
+        self.aircraft_policy = {}    # acid -> policy_id chosen for that aircraft only
         self.max_sim_time = 3600  # seconds
         os.makedirs(f'scenario/{save_dir}', exist_ok=True)
 
@@ -164,6 +166,8 @@ class DeployRL(core.Entity):
         self.pareto_directory = None
         self.pareto_catalog = None
         self.selected_policy_id = None
+        self.policy_models = {}
+        self.aircraft_policy = {}
         try:
             if pareto_folder is not None:
                 self.pareto_catalog = pareto.catalog_from_folder(pareto_folder, MODELS_DIR / self.env_name)
@@ -178,6 +182,8 @@ class DeployRL(core.Entity):
             self.pareto_directory = None
             self.pareto_catalog = None
             self.selected_policy_id = None
+            self.policy_models = {}
+            self.aircraft_policy = {}
             if pareto_folder is not None:
                 return   # the scenario explicitly asked for this front: do not run without it
 
@@ -255,22 +261,66 @@ class DeployRL(core.Entity):
         stack.process(f'DTMULT 5000')
 
 
-    def select_policy(self, policy_id):
-        """Called under the bridge simulation lock, between agent updates."""
+    def _load_policy_model(self, policy_id):
+        """Return the model of one checkpoint, loading it the first time it is needed."""
+        if policy_id not in self.policy_models:
+            path = self.pareto_catalog.checkpoint_path(policy_id)
+            self.policy_models[policy_id] = type(self.model).load(str(path), env=None)
+        return self.policy_models[policy_id]
+
+    def _checkpoint_name(self, policy_id):
+        return next(pareto_point["checkpoint"] for pareto_point in self.pareto_catalog.points if pareto_point["id"] == policy_id)
+
+    def select_policy(self, policy_id, acid=None, fixed=False):
+        """Called under the bridge simulation lock, between agent updates.
+
+        acid=None  -> the checkpoint used by every aircraft that has no policy of its own.
+        acid='AC12' -> the checkpoint used by that aircraft only (policy_id=None assigns 
+                    the aircraft to follow the default policy again). 
+                    For a policy to be fixed for an aircraft, set fixed=True. This keeps 
+                    the policy fixed for that aircraft even when the selected policy is the 
+                    default one, which might later be changed.
+        """
         if self.pareto_catalog is None:
             raise RuntimeError("Pareto selection is not enabled for this scenario "
                                "(demo SAC environment, or 'pareto_front <FOLDER>')")
-        path = self.pareto_catalog.checkpoint_path(policy_id)
+
+        if acid is not None:
+            if acid not in bs.traf.id:
+                raise LookupError(f"Aircraft {acid} is not in the simulation")
+            if policy_id is None:
+                self.aircraft_policy.pop(acid, None)
+                print(f"{acid}: default Pareto policy {policy_id} ({self._checkpoint_name(policy_id)}); active from the next agent decision")
+                return
+            # Keep the previous assignment if loading fails.
+            self._load_policy_model(policy_id)
+            if policy_id == self.selected_policy_id and not fixed:
+                # Same as the default policy
+                self.aircraft_policy.pop(acid, None)
+                print(f"{acid}: default Pareto policy {policy_id} ({self._checkpoint_name(policy_id)}); active from the next agent decision")
+            else:
+                self.aircraft_policy[acid] = policy_id
+                kept = " (currently the default policy)" if policy_id == self.selected_policy_id else ""
+                print(f"{acid}: fixed Pareto policy {policy_id} ({self._checkpoint_name(policy_id)}){kept}; active from the next agent decision")
+            return
+
+        if policy_id is None:
+            raise ValueError("policy_id is required when no aircraft is given")
         # Keep the previous model and selection if loading fails.
-        model = type(self.model).load(str(path), env=None)
-        self.model = model
+        self.model = self._load_policy_model(policy_id)
         self.selected_policy_id = policy_id
-        checkpoint = next(p["checkpoint"] for p in self.pareto_catalog.points if p["id"] == policy_id)
-        print(f"[DeployRL] Selected Pareto policy {policy_id} ({checkpoint}); active from the next agent decision")
+        print(f"Selected Pareto policy {policy_id} ({self._checkpoint_name(policy_id)}); active from the next agent decision")
+
+    def _model_for(self, acid):
+        """Return the model (specifically fixed or default policy) for the given aircraft."""
+        policy_id = self.aircraft_policy.get(acid)
+        return self.policy_models.get(policy_id, self.model) if policy_id is not None else self.model
 
     def front_payload(self):
         """Pareto front for the InteractiveAI tab."""
-        return self.pareto_catalog.payload(self.selected_policy_id)
+        payload = self.pareto_catalog.payload(self.selected_policy_id)
+        payload["aircraft_policies"] = dict(self.aircraft_policy)
+        return payload
 
     @stack.command
     def end_scen(self):
@@ -297,6 +347,7 @@ class DeployRL(core.Entity):
             bs.sim.start_batch_scenario(f'batch_{self.scn_idx}', list(self.scentime), list(self.scencmd))
             stack.stack(f'SAVEIC {save_dir}/{self.timestamp}_{self.env_name}_{self.algorithm}_{self.number_aircraft}_{self.number_obstacles}_{self.scn_idx}')
 
+            self.aircraft_policy = {}   #  this prevents the fixed policies to persist when callsigns are reused by the next scenario
             self.start_next = False
             self.initialise_observation_flag = True
             self.initial_observation_done = False
@@ -311,8 +362,12 @@ class DeployRL(core.Entity):
                 stack.process(f"DELETE {id}")
                 continue  # skip action if the aircraft has reached its destination
             obs = self._get_obs(ac_idx)
-            action, _ = self.model.predict(obs, deterministic=True)
+            action, _ = self._model_for(id).predict(obs, deterministic=True)
             self._set_action(action, ac_idx)
+
+        # forget the policy of aircraft that are gone (left the sector / reached destination)
+        for gone in [a for a in self.aircraft_policy if a not in traf.id]:
+            del self.aircraft_policy[gone]
 
         # --- logging ---
         simt = bs.sim.simt        # current sim time

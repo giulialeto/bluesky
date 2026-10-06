@@ -704,21 +704,57 @@ def pareto_front():
 
 @app.route("/policy", methods=["POST"])
 def select_policy():
+    """Choose the Pareto checkpoint that controls aircraft.
+
+    Post request body:
+        {"policy_id": 3}                      -> general policy (every aircraft with no fixed policy)
+        {"policy_id": 3, "id_plane": "AC12"}  -> that aircraft only
+        {"policy_id": null, "id_plane": "AC12"} -> AC12 follows the general policy again
+        {"policy_id": 3, "id_plane": "AC12", "fixed": true} -> that aircraft is locked to that policy, even if the general policy changes
+
+    Returns (JSON, 200):
+        {"selected_policy_id": 2, "id_plane": "AC12", "aircraft_policies": {"AC12": 3}}
+        selected_policy_id -- the general policy, used by every aircraft not listed in aircraft_policies;
+                              it only changes when the request has no id_plane
+        id_plane           -- the aircraft selected or null for a general selection
+        aircraft_policies  -- {aircraft id: policy_id} for every aircraft that currently has its own policy;
+                              an aircraft not listed follows selected_policy_id
+    """
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or type(data.get("policy_id")) is not int:
+    if not isinstance(data, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    policy_id = data.get("policy_id")
+    id_plane = data.get("id_plane")
+    if id_plane is not None and (not isinstance(id_plane, str) or not id_plane.strip()):
+        return jsonify({"error": "id_plane must be a non-empty string"}), 400
+    id_plane = id_plane.strip() if id_plane else None
+    fixed = data.get("fixed", False)
+    if policy_id is None and id_plane is None:
+        return jsonify({"error": "policy_id or id_plane is required"}), 400
+    if type(fixed) is not bool:
+        return jsonify({"error": "fixed must be true or false"}), 400
+    if fixed and (id_plane is None or policy_id is None):
+        return jsonify({"error": "fixed needs both id_plane and policy_id"}), 400
+    if policy_id is not None and type(policy_id) is not int:
         return jsonify({"error": "policy_id must be an integer"}), 400
     with _sim_lock:
         agent = _pareto_agent()
         if agent is None:
             return jsonify({"error": "Start the demo RL batch scenario to select a checkpoint."}), 409
         try:
-            agent.select_policy(data["policy_id"])
+            agent.select_policy(policy_id, id_plane, fixed)
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception:
             app.logger.exception("Unable to load ATM checkpoint")
             return jsonify({"error": "Checkpoint could not be loaded; previous policy remains active."}), 503
-        return jsonify({"selected_policy_id": agent.selected_policy_id})
+        return jsonify({
+            "selected_policy_id": agent.selected_policy_id,
+            "id_plane": id_plane,
+            "aircraft_policies": dict(agent.aircraft_policy),
+        })
 
 
 @app.route("/state", methods=["GET"])

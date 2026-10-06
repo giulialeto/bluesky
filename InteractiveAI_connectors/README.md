@@ -110,6 +110,29 @@ takes effect at the next RL decision.
 If a batch scenario is used, the checkpoint remains selected across batch repeats;
 restarting the bridge selects policy 1 again.
 
+### Per-aircraft checkpoints
+To select a policy for a single aircraft, the user can click on the aircraft on the map, then open the **Pareto front** tab. While an
+aircraft is selected, the selections made on the Pareto front interface will only apply to the selected aircraft. 
+Clicking a point on the Pareto front shows the rewards and objective weights for the policy in a tab on the right of the interface2. The policy is applied to the aircraft using the **Fix policy N for AC**** button above the plot. 
+
+With no aircraft selected, clicking a point sets the general policy, used by every aircraft that has no custom policy. 
+
+In both cases, changes take effect at the next RL
+decision.
+
+| State | Action | Request | Result |
+|---|---|---|---|
+| AC12 selected | Click a point on the pareto front | none (preview only) | The details panel shows that policy; the plot shows the policy currently applied to AC12 stays outlined with a dashed ring, and the new selection in a full circle. |
+| AC12 selected | Click **Fix policy 3 for AC12** (shown while AC12 is controlled with the policy) | `POST /policy` `{"policy_id": 3, "id_plane": "AC12", "fixed": true}` | AC12 gets a custom policy fixed (can be the same as the general one used), and keeps it when the general policy changes. |
+| AC12 selected | Click **Use the general policy for AC12** (shown while AC12 has a custom policy) | `POST /policy` `{"policy_id": null, "id_plane": "AC12", "fixed": false}` | AC12 follows the general policy again. |
+| No aircraft selected | Click a point on the pareto front | `POST /policy` `{"policy_id": 3}` | Sets the general policy for all aircraft that don't have a fixed policy. |
+
+
+Additional details:
+- Selecting another aircraft on the map discards the preview, if not Fixed.
+- To unselect an aircraft and see the Pareto front for the general policy, click on the aicraft a second time (or double click on any other aircraft to select and unselect it).
+- Checkpoints are loaded once and kept in memory; restart the bridge after replacing a checkpoint file.
+
 ### Demo
 A demo can be run adding the following command to the scenario:
 ```
