@@ -110,6 +110,24 @@ takes effect at the next RL decision.
 If a batch scenario is used, the checkpoint remains selected across batch repeats;
 restarting the bridge selects policy 1 again.
 
+### Reproducible batches
+Add `batch_seed <N>` to the batch scenario (next to `repeats`) to get the same scenarios every time the batch is run:
+
+```
+00:00:00.00>batch_seed 42
+00:00:00.00>repeats 10
+```
+
+Each repeat is seeded just before it starts, from the pair (seed, repeat number). The aircraft, 
+the obstacles and the perturbations are therefore the same in repeat 3 on every run, while the repeats
+differ from each other and from the repeats of a batch with another seed. The seed of each repeat is printed when it starts
+(`Starting scenario batch_3, repeats left: 7, seed: ...`).
+
+Without a `batch_seed` line, a seed is drawn at random and printed when the batch is loaded
+(`using seed 1234567`), so a run can be reproduced afterwards by adding that line. The same scenario can still
+differ between runs if the policy is changed from the Pareto front tab while the scenario is running, since that changes the
+aircraft's actions.
+
 ### Per-aircraft checkpoints
 To select a policy for a single aircraft, the user can click on the aircraft on the map, then open the **Pareto front** tab. While an
 aircraft is selected, the selections made on the Pareto front interface will only apply to the selected aircraft. 

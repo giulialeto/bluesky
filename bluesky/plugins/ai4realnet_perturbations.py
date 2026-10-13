@@ -44,13 +44,24 @@ def init_plugin():
     return config, stackfunctions
     # return config
 
+def set_seed(seed: int):
+    """Seed the random numbers of the perturbations."""
+    if perturbation_generator is not None:
+        perturbation_generator.set_seed(seed)
+
 class PerturbationGenerator(core.Entity):  
     def __init__(self):
         super().__init__()
         self.weather_perturbation_flag = False
         self.volcanic_perturbation_flag = False
+        # Random generator for the weather and volcanic cells.
+        # The random generation inside this plugin only depends on the seed given with set_seed(). The random generation of the scenario generator and the global generators (python, numpy, torch) are independent of this one.
+        self.rng = np.random.default_rng()
         # print(f'initialised perturbations')
-    
+
+    def set_seed(self, seed: int):
+        self.rng = np.random.default_rng(seed)
+
     def reset(self):
         self.weather_perturbation_flag = False
         self.volcanic_perturbation_flag = False
@@ -148,11 +159,11 @@ class PerturbationGenerator(core.Entity):
                         # Stable per-vertex jitter and angles for the lifetime of the cell
                         jitter = 0.25
                         self.weather_angles_deg = np.linspace(0.0, 360.0, num=self.n_verts, endpoint=False)
-                        self.weather_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.n_verts)
+                        self.weather_shape_jitter = 1.0 + self.rng.uniform(-jitter, jitter, size=self.n_verts)
                         print(f'Is this ever triggered?')
                     else:
                         jitter = 0.05
-                        self.weather_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.n_verts)
+                        self.weather_shape_jitter = 1.0 + self.rng.uniform(-jitter, jitter, size=self.n_verts)
 
                     weather_cell_latitude_centre, weather_cell_longitude_centre = self.weather_cell_center_lat, self.weather_cell_center_lon
                     weather_cell_poly = []
@@ -178,30 +189,30 @@ class PerturbationGenerator(core.Entity):
             else: # No active cell: sample a new one with probability pweather
 
                 # If there is no weather distrubance active, sample with probality pweather
-                weather_disturbance_flag = (np.random.rand() < pweather) and (not self.weather_active)
+                weather_disturbance_flag = (self.rng.random() < pweather) and (not self.weather_active)
 
                 if weather_disturbance_flag:
-                    self.n_verts  = np.random.randint(10, 16)            # polygon vertex count
+                    self.n_verts  = self.rng.integers(10, 16)            # polygon vertex count
                     # Sample lifetime ~ Exponential(mean=qweather)
                     # (Poisson process waiting time)
-                    weather_cell_lifetime = float(np.random.exponential(scale=max(qweather, 1e-6)))
+                    weather_cell_lifetime = float(self.rng.exponential(scale=max(qweather, 1e-6)))
                     # Minimum lifetime guard
                     weather_cell_lifetime = max(weather_cell_lifetime, weather_cell_lifetime_min)
 
                     # Random center within sector bounds
-                    weather_cell_latitude_centre, weather_cell_longitude_centre = np.random.uniform(latitude_bounds[0], latitude_bounds[1]), np.random.uniform(longitude_bounds[0], longitude_bounds[1])
+                    weather_cell_latitude_centre, weather_cell_longitude_centre = self.rng.uniform(latitude_bounds[0], latitude_bounds[1]), self.rng.uniform(longitude_bounds[0], longitude_bounds[1])
 
                     # Sample stable drift and shape
-                    self.weather_cell_heading = int(np.random.randint(0, 360)) # deg
-                    self.weather_cell_speed = float(np.random.uniform(vmin, vmax)) # kts
+                    self.weather_cell_heading = int(self.rng.integers(0, 360)) # deg
+                    self.weather_cell_speed = float(self.rng.uniform(vmin, vmax)) # kts
 
                     # Jitter the vertices of each weather cell
                     jitter = 0.25
                     self.weather_angles_deg = np.linspace(0.0, 360.0, num=self.n_verts, endpoint=False)
-                    self.weather_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.n_verts)
+                    self.weather_shape_jitter = 1.0 + self.rng.uniform(-jitter, jitter, size=self.n_verts)
 
                     # Start the weather disturbance with a small radius
-                    seed_radius_nm = float(np.random.uniform(0.5 * min_r_nm, min_r_nm))
+                    seed_radius_nm = float(self.rng.uniform(0.5 * min_r_nm, min_r_nm))
 
                     # Draw initial polygon
                     weather_cell_poly = []
@@ -279,11 +290,11 @@ class PerturbationGenerator(core.Entity):
                         # Stable per-vertex jitter and angles for the lifetime of the cell
                         jitter = 0.1
                         self.volcanic_angles_deg = np.linspace(0.0, 360.0, num=self.volcanic_n_verts, endpoint=False)
-                        self.volcanic_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.volcanic_n_verts)
+                        self.volcanic_shape_jitter = 1.0 + self.rng.uniform(-jitter, jitter, size=self.volcanic_n_verts)
                         print(f'Is this ever triggered?')
                     else:
                         jitter = 0.05
-                        self.volcanic_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.volcanic_n_verts)
+                        self.volcanic_shape_jitter = 1.0 + self.rng.uniform(-jitter, jitter, size=self.volcanic_n_verts)
 
                     volcanic_cell_latitude_centre, volcanic_cell_longitude_centre = self.volcanic_cell_center_lat, self.volcanic_cell_center_lon
                     volcanic_cell_poly = []
@@ -309,26 +320,26 @@ class PerturbationGenerator(core.Entity):
             else: # No active cell: sample a new one with probability pvolcanic
 
                 # If there is no volcanic distrubance active, sample with probality pvolcanic
-                volcanic_disturbance_flag = (np.random.rand() < pvolcanic) and (not self.volcanic_active)
+                volcanic_disturbance_flag = (self.rng.random() < pvolcanic) and (not self.volcanic_active)
 
                 if volcanic_disturbance_flag:
-                    self.volcanic_n_verts  = np.random.randint(10, 16)            # polygon vertex count
+                    self.volcanic_n_verts  = self.rng.integers(10, 16)            # polygon vertex count
                     # Sample lifetime ~ Exponential(mean=qvolcanic)
                     # (Poisson process waiting time)
-                    volcanic_cell_lifetime = float(np.random.exponential(scale=max(qvolcanic, 1e-6)))
+                    volcanic_cell_lifetime = float(self.rng.exponential(scale=max(qvolcanic, 1e-6)))
                     # Minimum lifetime guard
                     volcanic_cell_lifetime = max(volcanic_cell_lifetime, volcanic_cell_lifetime_min)
 
                     # Random center within sector bounds
-                    volcanic_cell_latitude_centre, volcanic_cell_longitude_centre = np.random.uniform(latitude_bounds[0], latitude_bounds[1]), np.random.uniform(longitude_bounds[0], longitude_bounds[1])
+                    volcanic_cell_latitude_centre, volcanic_cell_longitude_centre = self.rng.uniform(latitude_bounds[0], latitude_bounds[1]), self.rng.uniform(longitude_bounds[0], longitude_bounds[1])
 
                     # Jitter the vertices of each volcanic cell
                     jitter = 0.25
                     self.volcanic_angles_deg = np.linspace(0.0, 360.0, num=self.volcanic_n_verts, endpoint=False)
-                    self.volcanic_shape_jitter = 1.0 + np.random.uniform(-jitter, jitter, size=self.volcanic_n_verts)
+                    self.volcanic_shape_jitter = 1.0 + self.rng.uniform(-jitter, jitter, size=self.volcanic_n_verts)
 
                     # Start the weavolcanicther disturbance with a small radius
-                    seed_radius_nm = float(np.random.uniform(0.5 * min_r_nm, min_r_nm))
+                    seed_radius_nm = float(self.rng.uniform(0.5 * min_r_nm, min_r_nm))
 
                     # Draw initial polygon
                     volcanic_cell_poly = []

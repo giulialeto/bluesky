@@ -8,7 +8,10 @@ from bluesky.stack.simstack import readscn
 import bluesky as bs
 import bluesky.plugins.ai4realnet_deploy_RL_tools_batch as RLtools
 from stable_baselines3 import SAC, TD3, PPO, DDPG
+from stable_baselines3.common.utils import set_random_seed
 import numpy as np
+import random
+import sys
 import pandas as pd
 import os, datetime
 from pathlib import Path
@@ -21,6 +24,29 @@ MODELS_DIR = PLUGIN_DIR / "ai4realnet_deploy_RL_models"
 
 sector_name = 'LISBON_FIR'
 save_dir = 'ai4realnet_deploy_RL_batch/generated_scenarios'
+
+# Plugins that sample random numbers: each gets its own seed through its set_seed() function
+SEEDED_PLUGINS = ('ai4realnet_random_scenario_generator', 'ai4realnet_perturbations')
+
+def seed_batch_repeat(base_seed: int, repeat: int) -> int:
+    """
+    Seed everything that samples random numbers, just before a repeat of the batch starts.
+    Every component gets its own seed, derived from (base_seed, repeat), so that the scenario generator and the
+    perturbations do not depend on how many numbers the other one draws. Returns the seed of the global generators.
+    """
+    seeds = [int(s.generate_state(1)[0]) for s in np.random.SeedSequence([base_seed, repeat]).spawn(1 + len(SEEDED_PLUGINS))]
+    # global generators (python, numpy, torch): used for anything without a generator of its own
+    random.seed(seeds[0])
+    np.random.seed(seeds[0])
+    set_random_seed(seeds[0]) # SB3
+    # used for the generators connected to the deployRL plugin
+    for name, seed in zip(SEEDED_PLUGINS, seeds[1:]):
+        module = next((m for key, m in list(sys.modules.items()) if key.rsplit('.', 1)[-1] == name and hasattr(m, 'set_seed')), None)
+        if module is not None:
+            module.set_seed(seed)
+        else:
+            print(f"[DeployRL] WARNING: plugin '{name}' is not loaded, its random numbers are not seeded.")
+    return seeds[0]
 
 # Plugin initialization function
 def init_plugin():
@@ -43,6 +69,7 @@ class DeployRL(core.Entity):
         self.start_next = True
         self.repeats = 0
         self.total = 0
+        self.base_seed = None # seed of the batch; each repeat derives its own seed from it
         self.scentime = []
         self.scencmd = []
         self.start_updates = False
@@ -80,6 +107,23 @@ class DeployRL(core.Entity):
         cmd = scencmd.pop(idx)
         scentime.pop(idx)
         stack.process(cmd)
+
+        # Optional 'batch_seed <N>' line: read once, the ignore when repeating the scenarios in the batch
+        # Without it a seed is drawn and printed, so that any run can be reproduced afterwards.
+        self.base_seed = None
+        seed_idx = next(
+            (i for i, cmd in enumerate(scencmd)
+            if cmd.strip().lower().startswith('batch_seed')),
+            None
+        )
+        if seed_idx is not None:
+            cmd = scencmd.pop(seed_idx)
+            scentime.pop(seed_idx)
+            stack.process(cmd)
+        if self.base_seed is None:
+            self.base_seed = random.SystemRandom().randrange(2**31 - 1000)
+            print(f"[DeployRL] No 'batch_seed' line found in scenario '{fname}': using seed {self.base_seed}. "
+                  f"Add 'batch_seed {self.base_seed}' to the scenario to run it again.")
 
         # Remove plugin lines from scenario
         new_scentime = []
@@ -229,6 +273,18 @@ class DeployRL(core.Entity):
         """
         self.total = self.repeats = repetitions
         
+    @stack.command
+    def batch_seed(self, seed: int):
+        """
+        Set the seed of the batch: each repeat gets its own seed derived from (seed, repeat number), so that the
+        same batch gives the same scenarios (aircraft, obstacles, perturbations) every time, while the repeats
+        differ from each other and from the repeats of a batch with another seed.
+        """
+        if seed < 0 or seed > 2**31 - 1000:
+            print(f"[DeployRL] ERROR: batch_seed must be between 0 and {2**31 - 1000}.")
+            return
+        self.base_seed = seed
+
     @core.timed_function(name='update', dt=RLtools.constants.ACTION_FREQUENCY)
     def update(self):
         if self.start_updates == False:
@@ -237,6 +293,8 @@ class DeployRL(core.Entity):
         if self.start_next and self.repeats >= 0:
             self.repeats -= 1
             self.scn_idx = self.total - self.repeats
+            # Seed the random numbers of every component just before the scenario starts
+            scenario_seed = seed_batch_repeat(self.base_seed, self.scn_idx)
             bs.sim.start_batch_scenario(f'batch_{self.scn_idx}', list(self.scentime), list(self.scencmd))
             stack.stack(f'SAVEIC {save_dir}/{self.timestamp}_{self.env_name}_{self.algorithm}_{self.number_aircraft}_{self.number_obstacles}_{self.scn_idx}')
 
@@ -244,7 +302,7 @@ class DeployRL(core.Entity):
             self.initialise_observation_flag = True
             self.initial_observation_done = False
             stack.stack(f'ECHO Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}')
-            print(f'Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}')
+            print(f'Starting scenario batch_{self.scn_idx}, repeats left: {self.repeats}, seed: {scenario_seed}')
 
         for ac_idx, id in enumerate(traf.id):
             _, dest_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])

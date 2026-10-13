@@ -55,9 +55,12 @@ Create a scenario file in this template.
 00:00:00.00> deploy_RL StaticObstacleEnv-v0 SAC
 00:00:00.00>OP
 00:00:00.00>DTMULT 5000
+00:00:00.00>batch_seed 42
 00:00:00.00>repeats 10
 ```
 Choose and modify the parameters for this batch of testing: <N_AC>, <N_OBSTACLES>, <ENVIRONMENT>, <ALGORITHM>, <N_SCN>
+
+`batch_seed <N>` (optional) makes the batch reproducible: every repeat is seeded from the batch seed and its repeat number, so the same scenarios (aircraft, obstacles, perturbations) are generated on every run. Without it a random seed is drawn and printed when the batch is loaded, so that the run can be reproduced by adding it to the scenario.
 
 Start the plugin with 
 `plugin deployRL_batch`

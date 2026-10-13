@@ -47,6 +47,11 @@ def init_plugin():
 
     return config, stackfunctions
 
+def set_seed(seed: int):
+    """Seed the random numbers of the scenario generator."""
+    if scenario_generator is not None:
+        scenario_generator.set_seed(seed)
+
 class ScenarioGenerator(core.Entity):  
     def __init__(self):
         super().__init__()
@@ -54,10 +59,16 @@ class ScenarioGenerator(core.Entity):
         self.initialise_observation_flag = False
         self.altitude_ft = 35000 # ft
         self.altitude_m = self.altitude_ft * 0.3048 # m
+        # Random generator for the orstacles, aircraft origins and destinations.
+        # The random generation inside this plugin only depends on the seed given with set_seed(). The random generation of the perturbations generator and the global generators (python, numpy, torch) are independent of this one.
+        self.rng = np.random.default_rng()
 
     def reset(self):
         # print(f'reset SCN_GEN at {self.scn_idx}')
         pass
+
+    def set_seed(self, seed: int):
+        self.rng = np.random.default_rng(seed)
 
     # @stack.command(name ='INITIALIZE_SCENARIO', annotations= '', aliases=('INIT_SCENARIO', 'INITIALISE_SCENARIO'))
     def initialize_scenario(self, number_aircraft: int = N_AC, number_obstacles: int = N_OBSTACLES):
@@ -196,14 +207,14 @@ class ScenarioGenerator(core.Entity):
         """
         OBSTACLE_AREA_RANGE = (1000, 10000) # In NM^2
 
-        poly_area = np.random.randint(OBSTACLE_AREA_RANGE[0]*2, OBSTACLE_AREA_RANGE[1]) #NM^2
+        poly_area = self.rng.integers(OBSTACLE_AREA_RANGE[0]*2, OBSTACLE_AREA_RANGE[1]) #NM^2
         R = np.sqrt(poly_area/ np.pi) # NM
-        p = [functions.random_point_on_circle(R) for _ in range(3)] # 3 random points to start building the polygon
+        p = [functions.random_point_on_circle(R, self.rng) for _ in range(3)] # 3 random points to start building the polygon
         p = functions.sort_points_clockwise(p)
         p_area = functions.polygon_area(p)
         
         while p_area < OBSTACLE_AREA_RANGE[0]:
-            p.append(functions.random_point_on_circle(R))
+            p.append(functions.random_point_on_circle(R, self.rng))
             p = functions.sort_points_clockwise(p)
             p_area = functions.polygon_area(p)
         p = [functions.nm_to_latlong(centre, point) for point in p] # Convert to lat/long coordinates
@@ -219,8 +230,8 @@ class ScenarioGenerator(core.Entity):
         for i in range(num_obstacles):
             obstacle_centre_inside_sector = False
             while not obstacle_centre_inside_sector:                
-                obstacle_dis_from_reference = np.random.randint(OBSTACLE_DISTANCE_MIN, OBSTACLE_DISTANCE_MAX)
-                obstacle_hdg_from_reference = np.random.randint(0, 360)
+                obstacle_dis_from_reference = self.rng.integers(OBSTACLE_DISTANCE_MIN, OBSTACLE_DISTANCE_MAX)
+                obstacle_hdg_from_reference = self.rng.integers(0, 360)
 
                 obstacle_centre_lat, obstacle_centre_lon = functions.get_point_at_distance(latitude_bounds[0] + (latitude_bounds[1]-latitude_bounds[0])/2, longitude_bounds[0] + (longitude_bounds[1]-longitude_bounds[0])/2, obstacle_dis_from_reference, obstacle_hdg_from_reference)   
                 obstacle_centre_inside_sector = bs.tools.areafilter.checkInside(
@@ -262,8 +273,8 @@ class ScenarioGenerator(core.Entity):
             m = remaining_idx.size
 
             # sample only for the remaining positions
-            lat_try = np.random.uniform(min_lat, max_lat, size=m)
-            lon_try = np.random.uniform(min_lon, max_lon, size=m)
+            lat_try = self.rng.uniform(min_lat, max_lat, size=m)
+            lon_try = self.rng.uniform(min_lon, max_lon, size=m)
             altitude = np.ones(m)*orig_altitude
 
             inside_sector = bs.tools.areafilter.checkInside(
@@ -315,8 +326,8 @@ class ScenarioGenerator(core.Entity):
             m = remaining_idx.size
 
             # sample only for the remaining positions
-            lat_try = np.random.uniform(min_lat, max_lat, size=m)
-            lon_try = np.random.uniform(min_lon, max_lon, size=m)
+            lat_try = self.rng.uniform(min_lat, max_lat, size=m)
+            lon_try = self.rng.uniform(min_lon, max_lon, size=m)
             altitude = np.ones(m)*dest_altitude
 
             inside_sector = bs.tools.areafilter.checkInside(
