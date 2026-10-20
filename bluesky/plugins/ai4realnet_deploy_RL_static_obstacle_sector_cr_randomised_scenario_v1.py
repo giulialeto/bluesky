@@ -18,6 +18,13 @@ env_name = 'StaticObstacleSectorCREnv-v0'
 N_AC = 20  # Number of aircraft in the randomised scenario
 N_SCN = 10 # Number of testing iterations
 
+# Observation padding (intruders)
+# Phantom bearing: directly behind the ownship (cos, sin) = (-1, 0)
+PHANTOM_COS_BEARING = -1.0
+PHANTOM_SIN_BEARING = 0.0
+# Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / waypoint_distance_max). 
+PHANTOM_INTRUDER_DISTANCE = 0.9
+
 sector_name = 'LISBON_FIR'
 latitude_bounds = (31.4, 43.0)
 longitude_bounds = (-18.3, -6.1)
@@ -197,9 +204,10 @@ class DeployRL(core.Entity):
         # padding the observation if less than NUM_INTRUDERS are present
         if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
             num_missing_intruders = RLtools.constants.NUM_INTRUDERS - len(closest_intruders_idx)
-            intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(self.waypoint_distance_max,))
-            intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
-            intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
+            # far intruder straight behind the ownship with zero relative speed (flying behind at the same speed)
+            intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_INTRUDER_DISTANCE * self.waypoint_distance_max,))
+            intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_COS_BEARING,))
+            intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_SIN_BEARING,))
             intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
             intruder_y_difference_speed =  np.pad(intruder_y_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
 

@@ -24,6 +24,16 @@ deploy_RL = None
 
 # print(f"Current directory is {os.getcwd()}.")
 
+# Observation padding (obstacles and intruders)
+# Phantom bearing: directly behind the ownship (cos, sin) = (-1, 0)
+PHANTOM_COS_BEARING = -1.0
+PHANTOM_SIN_BEARING = 0.0
+# Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / waypoint_distance_max). 
+PHANTOM_INTRUDER_DISTANCE = 0.9
+# Phantom obstacle (used to pad up to NUM_OBSTACLES): normalised distance (distance / waypoint_distance_max) and normalised radius (radius / max_obstacle_radius).
+PHANTOM_OBSTACLE_DISTANCE = 0.9
+PHANTOM_OBSTACLE_RADIUS = 0.01
+
 sector_name = 'LISBON_FIR'
 save_dir = 'ai4realnet_deploy_RL_batch/generated_scenarios'
 
@@ -587,10 +597,11 @@ class DeployRL(core.Entity):
         # padding if less than RLtools.constants.NUM_OBSTACLES are present
         num_missing = self.NUM_OBSTACLES - obstacle_centre_distance.size
         if num_missing > 0:
-            obstacle_centre_distance = np.pad(obstacle_centre_distance, (0, num_missing), 'constant', constant_values=0.0)
-            obstacle_centre_cos_bearing = np.pad(obstacle_centre_cos_bearing, (0, num_missing), 'constant', constant_values=0.0)
-            obstacle_centre_sin_bearing = np.pad(obstacle_centre_sin_bearing, (0, num_missing), 'constant', constant_values=0.0)
-            obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=0.0)
+            # small obstacle far behind the ownship
+            obstacle_centre_distance = np.pad(obstacle_centre_distance, (0, num_missing), 'constant', constant_values=PHANTOM_OBSTACLE_DISTANCE * self.waypoint_distance_max)
+            obstacle_centre_cos_bearing = np.pad(obstacle_centre_cos_bearing, (0, num_missing), 'constant', constant_values=PHANTOM_COS_BEARING)
+            obstacle_centre_sin_bearing = np.pad(obstacle_centre_sin_bearing, (0, num_missing), 'constant', constant_values=PHANTOM_SIN_BEARING)
+            obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=PHANTOM_OBSTACLE_RADIUS * self.max_obstacle_radius)
 
 
         if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclecrenv-v0', 'staticobstaclesectorcrenv-v1', 'staticobstaclecrenv-v1'):
@@ -624,9 +635,10 @@ class DeployRL(core.Entity):
             # padding the observation if less than NUM_INTRUDERS are present
             if len(closest_intruders_idx) < self.NUM_INTRUDERS:
                 num_missing_intruders = self.NUM_INTRUDERS - len(closest_intruders_idx)
-                intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(self.waypoint_distance_max,))
-                intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
-                intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(0,))
+                # far intruder straight behind the ownship with zero relative speed (flying behind at the same speed)
+                intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_INTRUDER_DISTANCE * self.waypoint_distance_max,))
+                intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_COS_BEARING,))
+                intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_SIN_BEARING,))
                 intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
                 intruder_y_difference_speed =  np.pad(intruder_y_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
 
