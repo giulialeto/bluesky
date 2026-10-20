@@ -36,3 +36,4 @@
 00:00:00.00>OP
 # repeats <N_SCN>
 00:00:00.00>repeats 10
+00:00:00.00> batch_seed 42
