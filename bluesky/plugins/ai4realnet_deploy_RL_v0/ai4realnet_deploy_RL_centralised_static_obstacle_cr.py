@@ -129,8 +129,8 @@ class DeployRL(core.Entity):
             intruders_heading = np.delete(bs.traf.hdg, i)
             intruders_speed = np.delete(bs.traf.gs, i)
             heading_difference = bs.traf.hdg[i] - intruders_heading
-            x_dif = - np.cos(np.deg2rad(heading_difference)) * intruders_speed
-            y_dif = bs.traf.gs[i] - np.sin(np.deg2rad(heading_difference)) * intruders_speed
+            x_dif = - np.sin(-np.deg2rad(heading_difference)) * intruders_speed
+            y_dif = bs.traf.gs[i] - np.cos(-np.deg2rad(heading_difference)) * intruders_speed
             intruder_x_difference_speed.append(x_dif)
             intruder_y_difference_speed.append(y_dif)
 

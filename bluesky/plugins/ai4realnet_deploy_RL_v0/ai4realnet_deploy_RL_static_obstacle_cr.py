@@ -137,8 +137,8 @@ class DeployRL(core.Entity):
         intruders_heading = np.delete(bs.traf.hdg, ac_idx)
         intruders_speed = np.delete(bs.traf.gs, ac_idx)
         heading_difference = bs.traf.hdg[ac_idx] - intruders_heading[closest_intruders_idx]
-        intruder_x_difference_speed = - np.cos(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
-        intruder_y_difference_speed = bs.traf.gs[ac_idx] - np.sin(np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
+        intruder_x_difference_speed = - np.sin(-np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
+        intruder_y_difference_speed = bs.traf.gs[ac_idx] - np.cos(-np.deg2rad(heading_difference)) * intruders_speed[closest_intruders_idx]
 
         # padding the observation if less than NUM_INTRUDERS are present
         if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
