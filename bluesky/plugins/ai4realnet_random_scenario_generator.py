@@ -59,7 +59,7 @@ class ScenarioGenerator(core.Entity):
         # print(f'initialised SCN_GEN at {self.scn_idx}')
         self.initialise_observation_flag = False
         self.altitude_ft = 35000 # ft
-        self.altitude_m = self.altitude_ft * 0.3048 # m
+        self.altitude_m = self.altitude_ft * ft # m
         # Random generator for the orstacles, aircraft origins and destinations.
         # The random generation inside this plugin only depends on the seed given with set_seed(). The random generation of the perturbations generator and the global generators (python, numpy, torch) are independent of this one.
         self.rng = np.random.default_rng()
