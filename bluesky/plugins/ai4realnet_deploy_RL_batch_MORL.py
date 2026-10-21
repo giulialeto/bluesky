@@ -15,6 +15,7 @@ import sys
 import pandas as pd
 import os, datetime
 from pathlib import Path
+from bluesky.tools.aero import cas2tas, ft
 from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import pareto
 
 # Global variables
@@ -28,9 +29,9 @@ deploy_RL = None
 # Phantom bearing: directly behind the ownship (cos, sin) = (-1, 0)
 PHANTOM_COS_BEARING = -1.0
 PHANTOM_SIN_BEARING = 0.0
-# Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / waypoint_distance_max). 
+# Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / NEAR_DISTANCE_NORM). 
 PHANTOM_INTRUDER_DISTANCE = 0.9
-# Phantom obstacle (used to pad up to NUM_OBSTACLES): normalised distance (distance / waypoint_distance_max) and normalised radius (radius / max_obstacle_radius).
+# Phantom obstacle (used to pad up to NUM_OBSTACLES): normalised distance (distance / NEAR_DISTANCE_NORM) and normalised radius (radius / WAYPOINT_DISTANCE_MAX).
 PHANTOM_OBSTACLE_DISTANCE = 0.9
 PHANTOM_OBSTACLE_RADIUS = 0.01
 
@@ -208,13 +209,13 @@ class DeployRL(core.Entity):
         self.scencmd  = new_scencmd
 
         # Load the RL model 
-        if self.algorithm.lower() in ('sac'):
+        if self.algorithm.lower() in ('sac',):
             self.model = SAC.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        elif self.algorithm.lower() in ('td3'):
+        elif self.algorithm.lower() in ('td3',):
             self.model = TD3.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        elif self.algorithm.lower() in ('ppo'):
+        elif self.algorithm.lower() in ('ppo',):
             self.model = PPO.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
-        elif self.algorithm.lower() in ('ddpg'):
+        elif self.algorithm.lower() in ('ddpg',):
             self.model = DDPG.load(f"{MODELS_DIR}/{self.env_name}/{self.env_name}_{self.algorithm}/model", env=None)
 
         self.pareto_directory = None
@@ -268,7 +269,10 @@ class DeployRL(core.Entity):
             # Model parameters
             self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
             self.NUM_INTRUDERS = 5
-            self.AC_SPD = 150 # m/s
+            self.AC_SPD_CAS_MS = 150 # m/s
+            self.ALTITUDE_FT = 35000 # ft
+            self.WAYPOINT_DISTANCE_MAX = 400 # km, distance normalisation of the training environment
+            self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to intruders, obstacle centres and sector points (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
 
@@ -276,11 +280,14 @@ class DeployRL(core.Entity):
 
             self.TOTAL_OBSERVATION_POINTS = 50 # Number of points to be observed along the sector polygon edges
             self.DISTANCE_MARGIN = 5 # km
-        if self.env_name in ('staticobstaclesectorenv-v0'):
+        if self.env_name in ('staticobstaclesectorenv-v0',):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
             # Model parameters
             self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
-            self.AC_SPD = 150 # m/s
+            self.AC_SPD_CAS_MS = 150 # m/s
+            self.ALTITUDE_FT = 35000 # ft
+            self.WAYPOINT_DISTANCE_MAX = 170 # km, distance normalisation of the training environment
+            self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to obstacle centres and sector points (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
 
@@ -293,22 +300,34 @@ class DeployRL(core.Entity):
             # Model parameters
             self.NUM_OBSTACLES = 5 #np.random.randint(1,5)
             self.NUM_INTRUDERS = 5
-            self.AC_SPD = 150 # m/s
+            self.AC_SPD_CAS_MS = 150 # m/s
+            self.ALTITUDE_FT = 35000 # ft
+            self.WAYPOINT_DISTANCE_MAX = 400 # km, distance normalisation of the training environment
+            self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to intruders and obstacle centres (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
 
             self.ACTION_FREQUENCY = 10
             self.DISTANCE_MARGIN = 5 # km
-        if self.env_name in ('staticobstacleenv-v0'):
+        if self.env_name in ('staticobstacleenv-v0',):
             # print(f'initialise_RL for {self.env_name} at {self.scn_idx}')
             # Model parameters
             self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
-            self.AC_SPD = 150 # m/s
+            self.AC_SPD_CAS_MS = 150 # m/s
+            self.ALTITUDE_FT = 35000 # ft
+            self.WAYPOINT_DISTANCE_MAX = 170 # km, distance normalisation of the training environment
+            self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to obstacle centres (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
 
             self.ACTION_FREQUENCY = 10
             self.DISTANCE_MARGIN = 5 # km
+
+
+        if not hasattr(self, 'AC_SPD_CAS_MS') or not hasattr(self, 'ALTITUDE_FT'):
+            raise ValueError(f'Unknown environment {self.env_name}: no model parameters (AC_SPD_CAS_MS, ALTITUDE_FT, ...) defined in initialise_RL')
+        self.ALTITUDE_M = self.ALTITUDE_FT * ft # m
+        self.AC_TAS = cas2tas(self.AC_SPD_CAS_MS, self.ALTITUDE_M)  # m/s, normalisation of the relative speeds
 
         self.start_updates = True
         stack.process(f'OP')
@@ -464,18 +483,13 @@ class DeployRL(core.Entity):
 
     def _get_obs(self, ac_idx):
         """
-        Observation is the normalized. Normalisation logic should be studied further
+        Observation is the normalized.
+        Relative speeds are divided by the true airspeed of the training cruise (CAS 150 m/s at 35000 ft).
+        Distances to intruders, obstacle centres and sector points are divided by NEAR_DISTANCE_NORM, the destination distance and the obstacle radii by WAYPOINT_DISTANCE_MAX
+        (set per environment in initialise_RL). The distances are clipped to [0, 1], like in the training environments.
         """
         if self.initialise_observation_flag:
-            waypoint_distances = []
-
-            # Give aircraft initial heading
-            for ac_idx, _ in enumerate(traf.id):
-                _, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
-                waypoint_distances.append(initial_wpt_dist)
-
-            # Scaling factor for the distances in the observation vector
-            self.waypoint_distance_max = max(waypoint_distances)
+            # Distances are normalised with the fixed WAYPOINT_DISTANCE_MAX of the training environment (set in initialise_RL)
 
             if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0', 'staticobstaclesectorcrenv-v1'):
                 sector = tools.areafilter.basic_shapes[sector_name]
@@ -499,13 +513,11 @@ class DeployRL(core.Entity):
                     coordinates = shape.coordinates
                     coordinates = list(zip(coordinates[::2], coordinates[1::2]))
 
-                    (lat_c, lon_c), radius = RLtools.functions.bounding_circle_geodesic(coordinates)
+                    (lat_c, lon_c), radius = RLtools.functions.bounding_circle_geodesic(coordinates) # radius in m
                     self.obstacle_centre_lat.append(lat_c)
                     self.obstacle_centre_lon.append(lon_c)
-                    self.obstacle_radius.append(radius)
+                    self.obstacle_radius.append(radius / 1000)   # km
             
-            self.max_obstacle_radius = max(self.obstacle_radius)
-
             self.initialise_observation_flag = False
             self.initial_observation_done = True
 
@@ -542,7 +554,8 @@ class DeployRL(core.Entity):
             # print(f'Processing WEATHER_CELL obstacle for observation')
             coordinates = bs.tools.areafilter.basic_shapes['WEATHER_CELL'].coordinates
             coordinates = list(zip(coordinates[::2], coordinates[1::2]))
-            (weather_cell_center_lat, weather_cell_center_lon), weather_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates)
+            (weather_cell_center_lat, weather_cell_center_lon), weather_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates) # radius in m
+            weather_cell_radius = weather_cell_radius / 1000   # km
             weather_cell_centre_qdr, weather_cell_centre_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], weather_cell_center_lat, weather_cell_center_lon)
             weather_cell_centre_distance = weather_cell_centre_distance * RLtools.constants.NM2KM #KM            
             bearing = RLtools.functions.bound_angle_positive_negative_180(bs.traf.hdg[ac_idx] - weather_cell_centre_qdr)
@@ -555,7 +568,8 @@ class DeployRL(core.Entity):
             # print(f'Processing VOLCANIC_CELL obstacle for observation')
             coordinates = bs.tools.areafilter.basic_shapes['VOLCANIC_CELL'].coordinates
             coordinates = list(zip(coordinates[::2], coordinates[1::2]))
-            (volcanic_cell_center_lat, volcanic_cell_center_lon), volcanic_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates)
+            (volcanic_cell_center_lat, volcanic_cell_center_lon), volcanic_cell_radius = RLtools.functions.bounding_circle_geodesic(coordinates) # radius in m
+            volcanic_cell_radius = volcanic_cell_radius / 1000   # km
             volcanic_cell_centre_qdr, volcanic_cell_centre_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], volcanic_cell_center_lat, volcanic_cell_center_lon)
             volcanic_cell_centre_distance = volcanic_cell_centre_distance * RLtools.constants.NM2KM #KM            
             bearing = RLtools.functions.bound_angle_positive_negative_180(bs.traf.hdg[ac_idx] - volcanic_cell_centre_qdr)
@@ -598,10 +612,10 @@ class DeployRL(core.Entity):
         num_missing = self.NUM_OBSTACLES - obstacle_centre_distance.size
         if num_missing > 0:
             # small obstacle far behind the ownship
-            obstacle_centre_distance = np.pad(obstacle_centre_distance, (0, num_missing), 'constant', constant_values=PHANTOM_OBSTACLE_DISTANCE * self.waypoint_distance_max)
+            obstacle_centre_distance = np.pad(obstacle_centre_distance, (0, num_missing), 'constant', constant_values=PHANTOM_OBSTACLE_DISTANCE * self.NEAR_DISTANCE_NORM)
             obstacle_centre_cos_bearing = np.pad(obstacle_centre_cos_bearing, (0, num_missing), 'constant', constant_values=PHANTOM_COS_BEARING)
             obstacle_centre_sin_bearing = np.pad(obstacle_centre_sin_bearing, (0, num_missing), 'constant', constant_values=PHANTOM_SIN_BEARING)
-            obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=PHANTOM_OBSTACLE_RADIUS * self.max_obstacle_radius)
+            obstacle_radius = np.pad(obstacle_radius, (0, num_missing), 'constant', constant_values=PHANTOM_OBSTACLE_RADIUS * self.WAYPOINT_DISTANCE_MAX)
 
 
         if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclecrenv-v0', 'staticobstaclesectorcrenv-v1', 'staticobstaclecrenv-v1'):
@@ -636,7 +650,7 @@ class DeployRL(core.Entity):
             if len(closest_intruders_idx) < self.NUM_INTRUDERS:
                 num_missing_intruders = self.NUM_INTRUDERS - len(closest_intruders_idx)
                 # far intruder straight behind the ownship with zero relative speed (flying behind at the same speed)
-                intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_INTRUDER_DISTANCE * self.waypoint_distance_max,))
+                intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_INTRUDER_DISTANCE * self.NEAR_DISTANCE_NORM,))
                 intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_COS_BEARING,))
                 intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_SIN_BEARING,))
                 intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
@@ -665,63 +679,63 @@ class DeployRL(core.Entity):
         #     print(f'observation: {observation}')
         if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorcrenv-v1'):
             observation = {
-                    "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
+                    "intruder_distance": np.clip(np.array(intruder_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
                     "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
-                    "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_SPD,
-                    "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_SPD,
-                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
+                    "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_TAS,
+                    "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_TAS,
+                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
-                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-                    "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
+                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, # normalised
+                    "restricted_area_distance": np.clip(np.array(obstacle_centre_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                     "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
                     # observations on sector polygon edges and points along the edges
-                    "sector_points_distance": np.array(sector_points_distance).reshape(-1)/self.waypoint_distance_max,
+                    "sector_points_distance": np.clip(np.array(sector_points_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
                     "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
                 }
-        if self.env_name in ('staticobstaclesectorenv-v0'):
+        if self.env_name in ('staticobstaclesectorenv-v0',):
             observation = {
-                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
+                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
-                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-                    "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
+                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, # normalised
+                    "restricted_area_distance": np.clip(np.array(obstacle_centre_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                     "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
                     # observations on sector polygon edges and points along the edges
-                    "sector_points_distance": np.array(sector_points_distance).reshape(-1)/self.waypoint_distance_max,
+                    "sector_points_distance": np.clip(np.array(sector_points_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
                     "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
                 }
         if self.env_name in ('staticobstaclecrenv-v0', 'staticobstaclecrenv-v1'):
             observation = {
-                    "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
+                    "intruder_distance": np.clip(np.array(intruder_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
                     "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
-                    "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_SPD,
-                    "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_SPD,
-                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
+                    "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_TAS,
+                    "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_TAS,
+                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
-                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-                    "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
+                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, # normalised
+                    "restricted_area_distance": np.clip(np.array(obstacle_centre_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                     "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
                 }
-        if self.env_name in ('staticobstacleenv-v0'):
+        if self.env_name in ('staticobstacleenv-v0',):
             observation = {
-                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
+                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
-                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-                    "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
+                    "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, # normalised
+                    "restricted_area_distance": np.clip(np.array(obstacle_centre_distance).reshape(-1)/self.NEAR_DISTANCE_NORM, 0, 1),
                     "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                     "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
                 }

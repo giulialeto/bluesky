@@ -11,6 +11,7 @@ import bluesky as bs
 import pandas as pd
 from bluesky.network.publisher import state_publisher, StatePublisher
 import os, datetime
+from bluesky.tools.aero import cas2tas, ft
 
 algorithm = 'SAC'
 env_name = 'StaticObstacleSectorCREnv-v0'
@@ -22,8 +23,15 @@ N_SCN = 10 # Number of testing iterations
 # Phantom bearing: directly behind the ownship (cos, sin) = (-1, 0)
 PHANTOM_COS_BEARING = -1.0
 PHANTOM_SIN_BEARING = 0.0
-# Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / waypoint_distance_max). 
+# Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / NEAR_DISTANCE_NORM). 
 PHANTOM_INTRUDER_DISTANCE = 0.9
+
+WAYPOINT_DISTANCE_MAX = 400 # km
+NEAR_DISTANCE_NORM = 150 # km
+ALTITUDE_FT = 35000 # ft
+ALTITUDE_M = ALTITUDE_FT * ft # m
+AC_SPD_CAS_MS = 150 # m/s
+AC_TAS = cas2tas(AC_SPD_CAS_MS, ALTITUDE_M)  # m/s, true airspeed of the training cruise (CAS 150 m/s at 35000 ft), normalisation of the relative speeds
 
 sector_name = 'LISBON_FIR'
 latitude_bounds = (31.4, 43.0)
@@ -147,19 +155,13 @@ class DeployRL(core.Entity):
 
     def _get_obs(self, ac_idx):
         """
-        Observation is the normalized. Normalisation logic should be studied further
+        Observation is the normalized.
+        Relative speeds are divided by the true airspeed of the training cruise (CAS 150 m/s at 35000 ft).
+        Distances to intruders, obstacle centres and sector points are divided by NEAR_DISTANCE_NORM, the destination distance and the obstacle radii by WAYPOINT_DISTANCE_MAX
+        (constants at the top of this file). The distances are clipped to [0, 1], like in the training environments.
         """
         if self.initialise_observation_flag == True:
-            waypoint_distances = []
-
-            # Give aircraft initial heading
-            for ac_idx, id in enumerate(traf.id):
-                initial_wpt_qdr, initial_wpt_dist = tools.geo.kwikqdrdist(traf.lat[ac_idx], traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
-                # bs.traf.hdg[ac_idx] = initial_wpt_qdr
-                waypoint_distances.append(initial_wpt_dist)
-
-            # Scaling factor for the distances in the observation vector
-            self.waypoint_distance_max = max(waypoint_distances)
+            # Distances are normalised with the fixed WAYPOINT_DISTANCE_MAX of the training environment (see the constants at the top of this file)
 
             sector = tools.areafilter.basic_shapes[sector_name]
             coordinates = sector.coordinates
@@ -205,7 +207,7 @@ class DeployRL(core.Entity):
         if len(closest_intruders_idx) < RLtools.constants.NUM_INTRUDERS:
             num_missing_intruders = RLtools.constants.NUM_INTRUDERS - len(closest_intruders_idx)
             # far intruder straight behind the ownship with zero relative speed (flying behind at the same speed)
-            intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_INTRUDER_DISTANCE * self.waypoint_distance_max,))
+            intruder_distance = np.pad(intruder_distance, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_INTRUDER_DISTANCE * NEAR_DISTANCE_NORM,))
             intruder_cos_bearing =  np.pad(intruder_cos_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_COS_BEARING,))
             intruder_sin_bearing =  np.pad(intruder_sin_bearing, (0, num_missing_intruders), 'constant', constant_values=(PHANTOM_SIN_BEARING,))
             intruder_x_difference_speed =  np.pad(intruder_x_difference_speed, (0, num_missing_intruders), 'constant', constant_values=(0,))
@@ -286,21 +288,21 @@ class DeployRL(core.Entity):
             obstacle_radius = obstacle_radius[idx_sorted]
 
         observation = {
-                "intruder_distance": np.array(intruder_distance).reshape(-1)/self.waypoint_distance_max,
+                "intruder_distance": np.clip(np.array(intruder_distance).reshape(-1)/NEAR_DISTANCE_NORM, 0, 1),
                 "intruder_cos_difference_pos": np.array(intruder_cos_bearing).reshape(-1),
                 "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
-                "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/RLtools.constants.AC_SPD,
-                "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/RLtools.constants.AC_SPD,
-                "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.waypoint_distance_max,
+                "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/AC_TAS,
+                "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/AC_TAS,
+                "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/WAYPOINT_DISTANCE_MAX, 0, 1),
                 "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                 "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                 # observations on obstacles
-                "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/self.max_obstacle_radius,
-                "restricted_area_distance": np.array(obstacle_centre_distance).reshape(-1)/self.waypoint_distance_max,
+                "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/WAYPOINT_DISTANCE_MAX, # normalised
+                "restricted_area_distance": np.clip(np.array(obstacle_centre_distance).reshape(-1)/NEAR_DISTANCE_NORM, 0, 1),
                 "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
                 "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
                 # observations on sector polygon edges and points along the edges
-                "sector_points_distance": np.array(sector_points_distance).reshape(-1)/self.waypoint_distance_max,
+                "sector_points_distance": np.clip(np.array(sector_points_distance).reshape(-1)/NEAR_DISTANCE_NORM, 0, 1),
                 "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
                 "sector_points_sin_drift": np.array(sector_points_sin_drift).reshape(-1)
             }
@@ -536,7 +538,7 @@ class DeployRL(core.Entity):
 
             obstacle_names.append(poly_name)
             obstacle_vertices.append(obstacle_vertices_coordinates)
-            obstacle_radius.append(R)
+            obstacle_radius.append(R * RLtools.constants.NM2KM)   # R is in NM -> km
         # bs.sim.step()
 
         for i in range(NUM_OBSTACLES):
@@ -605,8 +607,6 @@ class DeployRL(core.Entity):
             self.obstacle_vertices = obstacle_vertices
             self.obstacle_radius = obstacle_radius
 
-            # Scaling factor for the radius in the observation vector
-            self.max_obstacle_radius = max(self.obstacle_radius)
             # Find observation points for sector
 
     def _generate_polygon(self, centre):
