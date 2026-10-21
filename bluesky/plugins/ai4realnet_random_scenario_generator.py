@@ -8,6 +8,7 @@ import numpy as np
 import bluesky as bs
 import pandas as pd
 from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import functions
+from bluesky.tools.aero import ft, kts  # BlueSky conversion factors: ft -> m, kt -> m/s
 
 # Global data - softcoded parameters
 N_AC = 20  # Number of aircraft in the randomised scenario
@@ -365,5 +366,6 @@ class ScenarioGenerator(core.Entity):
         heading, _ = bs.tools.geo.kwikqdrdist(lat_orig, lon_orig, lat_dest, lon_dest)
 
         for ac_idx in range(n_ac):
-            bs.stack.process(f'CRE AC{ac_idx+1}, A320, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude}, {orig_speed}')
+            # Stack arguments are read in ft (altitude) and kt (CAS): convert, so that the aircraft fly at the same altitude and CAS as in training
+            bs.stack.process(f'CRE AC{ac_idx+1}, A320, {lat_orig[ac_idx]}, {lon_orig[ac_idx]}, {heading[ac_idx]}, {orig_altitude/ft}, {orig_speed/kts}')
             bs.stack.process(f'DEST AC{ac_idx+1} {lat_dest[ac_idx]} {lon_dest[ac_idx]}')
