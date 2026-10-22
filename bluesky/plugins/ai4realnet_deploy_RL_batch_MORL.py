@@ -271,7 +271,7 @@ class DeployRL(core.Entity):
             self.NUM_INTRUDERS = 5
             self.AC_SPD_CAS_MS = 150 # m/s
             self.ALTITUDE_FT = 35000 # ft
-            self.WAYPOINT_DISTANCE_MAX = 400 # km, distance normalisation of the training environment
+            self.WAYPOINT_DISTANCE_MAX = 400 # km, normalisation of the obstacle radii
             self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to intruders, obstacle centres and sector points (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
@@ -286,7 +286,7 @@ class DeployRL(core.Entity):
             self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
             self.AC_SPD_CAS_MS = 150 # m/s
             self.ALTITUDE_FT = 35000 # ft
-            self.WAYPOINT_DISTANCE_MAX = 170 # km, distance normalisation of the training environment
+            self.WAYPOINT_DISTANCE_MAX = 170 # km, normalisation of the obstacle radii
             self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to obstacle centres and sector points (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
@@ -302,7 +302,7 @@ class DeployRL(core.Entity):
             self.NUM_INTRUDERS = 5
             self.AC_SPD_CAS_MS = 150 # m/s
             self.ALTITUDE_FT = 35000 # ft
-            self.WAYPOINT_DISTANCE_MAX = 400 # km, distance normalisation of the training environment
+            self.WAYPOINT_DISTANCE_MAX = 400 # km, normalisation of the obstacle radii
             self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to intruders and obstacle centres (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
@@ -315,7 +315,7 @@ class DeployRL(core.Entity):
             self.NUM_OBSTACLES = 10 #np.random.randint(1,5)
             self.AC_SPD_CAS_MS = 150 # m/s
             self.ALTITUDE_FT = 35000 # ft
-            self.WAYPOINT_DISTANCE_MAX = 170 # km, distance normalisation of the training environment
+            self.WAYPOINT_DISTANCE_MAX = 170 # km, normalisation of the obstacle radii
             self.NEAR_DISTANCE_NORM = 150 # km, normalisation of the distances to obstacle centres (clipped to [0, 1])
             self.D_HEADING = 45 #degrees
             self.D_SPEED = 20/3 # m/s
@@ -484,12 +484,15 @@ class DeployRL(core.Entity):
     def _get_obs(self, ac_idx):
         """
         Observation is the normalized.
-        Relative speeds are divided by the true airspeed of the training cruise (CAS 150 m/s at 35000 ft).
-        Distances to intruders, obstacle centres and sector points are divided by NEAR_DISTANCE_NORM, the destination distance and the obstacle radii by WAYPOINT_DISTANCE_MAX
-        (set per environment in initialise_RL). The distances are clipped to [0, 1], like in the training environments.
+        Relative speeds are divided by the initial true airspeed (CAS 150 m/s at 35000 ft).
+        Distances to intruders, obstacle centres and sector points are divided by NEAR_DISTANCE_NORM, then clipped to [0, 1] to flatten far objects which we don't care about. 
+        The destination distance is observed as (current distance to destination) / (initial destination distance): 1 at the start, 0 at the destination. It is not clipped, so that the agent can learn to avoid going further away from the destination.
+        The obstacle radii are divided by WAYPOINT_DISTANCE_MAX. 
         """
         if self.initialise_observation_flag:
-            # Distances are normalised with the fixed WAYPOINT_DISTANCE_MAX of the training environment (set in initialise_RL)
+            # Distances and radii are normalised with the fixed constants of the training environment (set in initialise_RL)
+            # the initial destination distance of each aircraft is reset at the start of every scenario
+            self.initial_destination_distance = {}
 
             if self.env_name in ('staticobstaclesectorcrenv-v0', 'staticobstaclesectorenv-v0', 'staticobstaclesectorcrenv-v1'):
                 sector = tools.areafilter.basic_shapes[sector_name]
@@ -525,6 +528,11 @@ class DeployRL(core.Entity):
         wpt_qdr, wpt_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.ap.route[ac_idx].wplat[-1], bs.traf.ap.route[ac_idx].wplon[-1])
     
         destination_waypoint_distance = wpt_dis * RLtools.constants.NM2KM
+
+        # initial destination distance of this aircraft: the distance at its first observation of the scenario
+        acid = bs.traf.id[ac_idx]
+        if acid not in self.initial_destination_distance:
+            self.initial_destination_distance[acid] = destination_waypoint_distance
 
         drift = bs.traf.hdg[ac_idx] - wpt_qdr
         destination_waypoint_drift = RLtools.functions.bound_angle_positive_negative_180(drift)
@@ -684,7 +692,7 @@ class DeployRL(core.Entity):
                     "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
                     "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_TAS,
                     "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_TAS,
-                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
+                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.initial_destination_distance[acid],
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
@@ -699,7 +707,7 @@ class DeployRL(core.Entity):
                 }
         if self.env_name in ('staticobstaclesectorenv-v0',):
             observation = {
-                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
+                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.initial_destination_distance[acid],
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
@@ -719,7 +727,7 @@ class DeployRL(core.Entity):
                     "intruder_sin_difference_pos": np.array(intruder_sin_bearing).reshape(-1),
                     "intruder_x_difference_speed": np.array(intruder_x_difference_speed).reshape(-1)/self.AC_TAS,
                     "intruder_y_difference_speed": np.array(intruder_y_difference_speed).reshape(-1)/self.AC_TAS,
-                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
+                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.initial_destination_distance[acid],
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
@@ -730,7 +738,7 @@ class DeployRL(core.Entity):
                 }
         if self.env_name in ('staticobstacleenv-v0',):
             observation = {
-                    "destination_waypoint_distance": np.clip(np.array(destination_waypoint_distance).reshape(-1)/self.WAYPOINT_DISTANCE_MAX, 0, 1),
+                    "destination_waypoint_distance": np.array(destination_waypoint_distance).reshape(-1)/self.initial_destination_distance[acid],
                     "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                     "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                     # observations on obstacles
