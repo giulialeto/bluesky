@@ -26,8 +26,7 @@ PHANTOM_SIN_BEARING = 0.0
 # Phantom intruder (used to pad up to NUM_INTRUDERS): normalised distance (distance / NEAR_DISTANCE_NORM). 
 PHANTOM_INTRUDER_DISTANCE = 0.9
 
-WAYPOINT_DISTANCE_MAX = 400 # km
-NEAR_DISTANCE_NORM = 150 # km
+NEAR_DISTANCE_NORM = 150 # km normalisation of the distances to intruders and sector points (clipped to [0, 1]) and of the nearest point of the obstacles (clipped to [-1, 1])
 ALTITUDE_FT = 35000 # ft
 ALTITUDE_M = ALTITUDE_FT * ft # m
 AC_SPD_CAS_MS = 150 # m/s
@@ -157,9 +156,10 @@ class DeployRL(core.Entity):
         """
         Observation is the normalized.
         Relative speeds are divided by the initial true airspeed (CAS 150 m/s at 35000 ft).
-        Distances to intruders, obstacle centres and sector points are divided by NEAR_DISTANCE_NORM, then clipped to [0, 1] to flatten far objects which we don't care about. 
+        Distances to intruders and sector points are divided by NEAR_DISTANCE_NORM, then clipped to [0, 1] to flatten far objects which we don't care about. 
+        The distance to the nearest boundary point of the obstacles is observed as (distance to nearest boundary point) / (NEAR_DISTANCE_NORM), with a sign indicating the direction (positive outside an obstacle, negative inside an obstacle). It is clipped to [-1, 1] to flatten far obstacles which we don't care about.
+        For each obstacle the bearing of its nearest point and the angles between the heading and its left-most and right-most tangent (divided by 180 deg) are observed as well.
         The destination distance is observed as (current distance to destination) / (initial destination distance): 1 at the start, 0 at the destination. It is not clipped, so that the agent can learn to avoid going further away from the destination.
-        The obstacle radii are divided by WAYPOINT_DISTANCE_MAX. 
         """
         if self.initialise_observation_flag == True:
             # Distances and radii are normalised with the fixed constants of the training environment (see the constants at the top of this file)
@@ -232,30 +232,31 @@ class DeployRL(core.Entity):
         destination_waypoint_cos_drift = np.cos(np.deg2rad(destination_waypoint_drift))
         destination_waypoint_sin_drift = np.sin(np.deg2rad(destination_waypoint_drift))
 
-        # obstacles 
-        obstacle_centre_distance = []
-        obstacle_centre_cos_bearing = []
-        obstacle_centre_sin_bearing = []
+        # obstacles: 
+        # signed clearance to the nearest point of each obstacle polygon (positive outside an obstacle, negative inside an obstacle), 
+        obstacle_clearance = []
+        obstacle_nearest_cos_bearing = []
+        obstacle_nearest_sin_bearing = []
+        # bearing of that nearest point and angles to the left-most and right-most tangent of the polygon
+        obstacle_left_edge = []
+        obstacle_right_edge = []
 
-        for obs_idx in range(RLtools.constants.NUM_OBSTACLES):
-            obs_centre_qdr, obs_centre_dis = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.obstacle_centre_lat[obs_idx], self.obstacle_centre_lon[obs_idx])
-            obs_centre_dis = obs_centre_dis * RLtools.constants.NM2KM #KM        
-            bearing = bs.traf.hdg[ac_idx] - obs_centre_qdr
-            
-            bearing = RLtools.functions.bound_angle_positive_negative_180(bearing)
+        obstacle_polygons = list(self.obstacle_vertices[:RLtools.constants.NUM_OBSTACLES])
+        obstacle_names = list(self.obstacle_names[:RLtools.constants.NUM_OBSTACLES])
 
-            obstacle_centre_distance.append(obs_centre_dis)
-            obstacle_centre_cos_bearing.append(np.cos(np.deg2rad(bearing)))
-            obstacle_centre_sin_bearing.append(np.sin(np.deg2rad(bearing)))
-
-        # weather disturbances
+        # append weather disturbances to the polygon list if they are present in the scenario
         if self.weather_active:
-            weather_cell_centre_qdr, weather_cell_centre_distance = bs.tools.geo.kwikqdrdist(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], self.weather_cell_center_lat, self.weather_cell_center_lon)
-            weather_cell_centre_distance = weather_cell_centre_distance * RLtools.constants.NM2KM #KM            
-            bearing = RLtools.functions.bound_angle_positive_negative_180(bs.traf.hdg[ac_idx] - weather_cell_centre_qdr)
+            coordinates = bs.tools.areafilter.basic_shapes['WEATHER_CELL'].coordinates
+            obstacle_polygons.append(list(zip(coordinates[::2], coordinates[1::2])))
+            obstacle_names.append('WEATHER_CELL')
 
-            weather_cell_centre_cos_bearing = np.cos(np.deg2rad(bearing))
-            weather_cell_centre_sin_bearing = np.sin(np.deg2rad(bearing))
+        for polygon, area_name in zip(obstacle_polygons, obstacle_names):
+            clearance, cos_bearing, sin_bearing, left_edge, right_edge = RLtools.functions.polygon_observation(bs.traf.lat[ac_idx], bs.traf.lon[ac_idx], bs.traf.hdg[ac_idx], bs.traf.alt[ac_idx], area_name, polygon)
+            obstacle_clearance.append(clearance)
+            obstacle_nearest_cos_bearing.append(cos_bearing)
+            obstacle_nearest_sin_bearing.append(sin_bearing)
+            obstacle_left_edge.append(left_edge)
+            obstacle_right_edge.append(right_edge)
 
         # sector polygon edges observation
         sector_points_distance = []
@@ -275,25 +276,21 @@ class DeployRL(core.Entity):
             sector_points_cos_drift.append(np.cos(np.deg2rad(drift)))
             sector_points_sin_drift.append(np.sin(np.deg2rad(drift)))
         
-        obstacle_radius = self.obstacle_radius.copy()
+        obstacle_clearance = np.array(obstacle_clearance)
+        obstacle_nearest_cos_bearing = np.array(obstacle_nearest_cos_bearing)
+        obstacle_nearest_sin_bearing = np.array(obstacle_nearest_sin_bearing)
+        obstacle_left_edge = np.array(obstacle_left_edge)
+        obstacle_right_edge = np.array(obstacle_right_edge)
+
         ## Find the RLtools.constants.NUM_OBSTACLES closest obstacles to the ownship (restricted areas or weather cells)
         if self.weather_active:
-            obstacle_centre_distance.append(weather_cell_centre_distance)
-            obstacle_centre_cos_bearing.append(weather_cell_centre_cos_bearing)
-            obstacle_centre_sin_bearing.append(weather_cell_centre_sin_bearing)
-            obstacle_radius.append(self.weather_cell_radius)
+            idx_sorted = np.argsort(obstacle_clearance)[:RLtools.constants.NUM_OBSTACLES]
 
-            obstacle_centre_distance = np.array(obstacle_centre_distance)
-            obstacle_centre_cos_bearing = np.array(obstacle_centre_cos_bearing)
-            obstacle_centre_sin_bearing = np.array(obstacle_centre_sin_bearing)
-            obstacle_radius = np.array(obstacle_radius)
-
-            idx_sorted = np.argsort(obstacle_centre_distance)[:RLtools.constants.NUM_OBSTACLES]
-
-            obstacle_centre_distance = obstacle_centre_distance[idx_sorted]
-            obstacle_centre_cos_bearing = obstacle_centre_cos_bearing[idx_sorted]
-            obstacle_centre_sin_bearing = obstacle_centre_sin_bearing[idx_sorted]
-            obstacle_radius = obstacle_radius[idx_sorted]
+            obstacle_clearance = obstacle_clearance[idx_sorted]
+            obstacle_nearest_cos_bearing = obstacle_nearest_cos_bearing[idx_sorted]
+            obstacle_nearest_sin_bearing = obstacle_nearest_sin_bearing[idx_sorted]
+            obstacle_left_edge = obstacle_left_edge[idx_sorted]
+            obstacle_right_edge = obstacle_right_edge[idx_sorted]
 
         observation = {
                 "intruder_distance": np.clip(np.array(intruder_distance).reshape(-1)/NEAR_DISTANCE_NORM, 0, 1),
@@ -305,10 +302,11 @@ class DeployRL(core.Entity):
                 "destination_waypoint_cos_drift": np.array(destination_waypoint_cos_drift).reshape(-1),
                 "destination_waypoint_sin_drift": np.array(destination_waypoint_sin_drift).reshape(-1),
                 # observations on obstacles
-                "restricted_area_radius": np.array(obstacle_radius).reshape(-1)/WAYPOINT_DISTANCE_MAX, # normalised
-                "restricted_area_distance": np.clip(np.array(obstacle_centre_distance).reshape(-1)/NEAR_DISTANCE_NORM, 0, 1),
-                "cos_difference_restricted_area_pos": np.array(obstacle_centre_cos_bearing).reshape(-1),
-                "sin_difference_restricted_area_pos": np.array(obstacle_centre_sin_bearing).reshape(-1),
+                "restricted_area_left_edge": np.array(obstacle_left_edge).reshape(-1),
+                "restricted_area_right_edge": np.array(obstacle_right_edge).reshape(-1),
+                "restricted_area_distance": np.clip(np.array(obstacle_clearance).reshape(-1)/NEAR_DISTANCE_NORM, -1, 1),
+                "cos_difference_restricted_area_pos": np.array(obstacle_nearest_cos_bearing).reshape(-1),
+                "sin_difference_restricted_area_pos": np.array(obstacle_nearest_sin_bearing).reshape(-1),
                 # observations on sector polygon edges and points along the edges
                 "sector_points_distance": np.clip(np.array(sector_points_distance).reshape(-1)/NEAR_DISTANCE_NORM, 0, 1),
                 "sector_points_cos_drift": np.array(sector_points_cos_drift).reshape(-1),
