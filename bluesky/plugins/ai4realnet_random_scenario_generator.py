@@ -10,6 +10,9 @@ import pandas as pd
 from bluesky.plugins.ai4realnet_deploy_RL_tools_batch import functions
 from bluesky.tools.aero import ft, kts  # BlueSky conversion factors: ft -> m, kt -> m/s
 
+# Minimum distance from an aircraft's starting position to every obstacle. Aircraft closer than this are resampled.
+OBSTACLE_CLEARANCE_MIN = 30 # KM
+
 # Global data - softcoded parameters
 N_AC = 20  # Number of aircraft in the randomised scenario
 N_OBSTACLES = 5 
@@ -302,7 +305,10 @@ class ScenarioGenerator(core.Entity):
                 # print(f'inside_any_restricted: {inside_any_restricted}')
 
 
-            inside = inside_sector & (~inside_any_restricted)
+            # the aircraft's initial position needs to be further than OBSTACLE_CLEARANCE_MIN from the obstacles, to avoid a certain crash at the beginning of the scenario. For simplicity, obstacles are approximated as circles of radius R around their centre.
+            too_close_to_restricted = functions.distance_to_obstacles(lat_try, lon_try, self.obstacle_centre_lat, self.obstacle_centre_lon, self.obstacle_radius) < OBSTACLE_CLEARANCE_MIN
+
+            inside = inside_sector & (~inside_any_restricted) & (~too_close_to_restricted)
             # print(f'inside: {inside}')
 
             # place successful samples into their slots
