@@ -384,7 +384,7 @@ class DeployRL(core.Entity):
                 coordinates = sector.coordinates
                 latitudes = coordinates[::2]
                 longitudes = coordinates[1::2]
-                self.sector_points = RLtools.functions.resample_closed_border(latitudes, longitudes, self.TOTAL_OBSERVATION_POINTS)
+                self.sector_points = RLtools.functions.sector_observation_points(latitudes, longitudes, self.TOTAL_OBSERVATION_POINTS)
 
             # # Display in BlueSky the sector points contained in the observation 
             # print(f'sector points: {self.sector_points}, shape: {np.array(self.sector_points).shape}, type: {type(self.sector_points)}')

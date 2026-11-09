@@ -289,6 +289,86 @@ def resample_closed_border(latitudes, longitudes, n_points):
     out = np.array(out, dtype=np.float64)
     return out
 
+def sector_observation_points(latitudes, longitudes, total_points):
+    """ Points along the border of the sector that are observed by the policy. They are built
+    in the same way as in the training environments (_get_observation_polygon_edges):
+    - all the vertices of the sector.
+    - the remaining points are equally distributed over the edges: the same number of points on every edge, 
+      regardless of the length of the edge. 
+      The first (total_points - number of vertices) % number of vertices edges get one more point.
+
+    Input:
+        latitudes, longitudes: sequence of floats, sequence of floats -> latitude(s) and longitude(s) of the vertices of the sector [degrees, degrees]
+        total_points: int -> number of points to return. If it is smaller than the number of vertices, the border is resampled in equidistant points.
+    Returns:
+        points: np.ndarray, shape (total_points, 2) -> latitude and longitude of the points [degrees, degrees] """
+    lat = np.asarray(latitudes, dtype=float)
+    lon = np.asarray(longitudes, dtype=float)
+
+    # Remove duplicate final vertex if the caller already closed the polygon
+    if lat[0] == lat[-1] and lon[0] == lon[-1]:
+        lat = lat[:-1]
+        lon = lon[:-1]
+
+    # deal with cases with too few or too many vertices
+    num_vertices = len(lat)
+    if num_vertices < 3:
+        raise ValueError("Need at least three vertices")
+    if num_vertices > total_points:
+        return resample_closed_border(lat, lon, total_points)
+
+    # Project the vertices onto a flat plane (east, north) using the geometrical centre of a bounding boxs around the obstacle as the reference point.
+    # The reference point is used to compute the x (east) and y (north) coordinates of the vertices, and also to compute the centre of the sector (the area centroid of the polygon).
+    reference_lat = 0.5 * (lat.min() + lat.max())
+    reference_lon = 0.5 * (lon.min() + lon.max())
+    # x_k contains the x (east-west) coordinates of the vertices, y_k contains the y (north-south) coordinates of the vertices, both in degrees.
+    x_k = (lon - reference_lon) * np.cos(np.radians(reference_lat)) # [degrees], the longitude is scaled by the cosine of the reference latitude to account for the convergence of meridians.
+    y_k = lat - reference_lat # [degrees]
+
+    # Signed area of the polygon (shoelace formula): positive for counter-clockwise vertices, negative for clockwise ones
+    cross = x_k * np.roll(y_k, -1) - np.roll(x_k, -1) * y_k
+    signed_area = 0.5 * np.sum(cross)
+
+    # Centre of the sector: area centroid of the polygon. If the area is (nearly) zero, the reference point (the centre of the bounding box) is used.
+    if abs(signed_area) > 1e-12:
+        centre_east = np.sum((x_k + np.roll(x_k, -1)) * cross) / (6 * signed_area)
+        centre_north = np.sum((y_k + np.roll(y_k, -1)) * cross) / (6 * signed_area)
+    else:
+        centre_east, centre_north = 0.0, 0.0
+    # Vertex coordinates relative to the centroid of the polygon
+    x_centroid_k = x_k - centre_east
+    y_centroid_k = y_k - centre_north
+
+    # Orientation: counter-clockwise vertices (positive signed area) are reversed
+    if signed_area > 0:
+        lat, lon, x_centroid_k, y_centroid_k = lat[::-1], lon[::-1], x_centroid_k[::-1], y_centroid_k[::-1]
+
+    # Re-order the vertices so that the first in the list corresponds to the largest negative angle of the coordinates of each vertex relative to the centroid of the polygon. This way, the first vertex is the first one clockwise from the southern direction.
+    start = int(np.argmin(np.arctan2(x_centroid_k, y_centroid_k)))
+    lat = np.roll(lat, -start)
+    lon = np.roll(lon, -start)
+
+    # Points per edge: all the vertices plus the same number of interpolated points on each edge (the remainder goes to the first edges)
+    points_to_interpolate = total_points - num_vertices
+    base_points = points_to_interpolate // num_vertices
+    extra_points = points_to_interpolate % num_vertices
+
+    points = []
+    # This is the same as replacing all the appends with: pointlat = np.linspace(lat[i], lat[j], n_interp + 2)[0:-1] and pointlon = np.linspace(lon[i], lon[j], n_interp + 2)[0:-1]
+    for i in range(num_vertices):
+        # Next vertex (wrapping around to the first vertex)
+        j = (i + 1) % num_vertices
+        # Number of points to interpolate on this edge: base_points + 1 for the first edges if there are extra points to distribute
+        n_interp = base_points + (1 if i < extra_points else 0)
+        # Append the vertex
+        points.append([lat[i], lon[i]])
+        # Interpolate between vertex i and the next one, excluding both (the next edge starts at the next vertex)
+        for t in np.linspace(0, 1, n_interp + 2)[1:-1]:
+            # Append all interpolated points
+            points.append([lat[i] + t * (lat[j] - lat[i]), lon[i] + t * (lon[j] - lon[i])])
+
+    return np.array(points, dtype=np.float64)
+
 # from pyproj import Geod
 
 # WGS84 = Geod(ellps="WGS84")
